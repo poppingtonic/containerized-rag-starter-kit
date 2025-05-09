@@ -1,0 +1,11 @@
+pytesseract==0.3.10
+pdf2image==1.16.3
+numpy==1.24.3
+pillow==10.0.0
+watchdog==3.0.0
+python-magic==0.4.27
+pdfminer.six==20221105
+ocrmypdf==14.3.0
+Flask==2.3.3
+gunicorn==21.2.0
+requests==2.31.0

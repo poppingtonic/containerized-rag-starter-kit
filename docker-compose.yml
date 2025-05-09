@@ -1,0 +1,82 @@
+version: '3.9'
+
+services:
+  db:
+    build: ./db
+    environment:
+      POSTGRES_USER: graphraguser
+      POSTGRES_PASSWORD: graphragpassword
+      POSTGRES_DB: graphragdb
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graphraguser -d graphragdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      
+  ingestion-service:
+    build: ./ingestion_service
+    environment:
+      DATABASE_URL: postgresql://graphraguser:graphragpassword@db:5432/graphragdb
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  graphrag-processor:
+    build: ./graphrag_processor
+    environment:
+      DATABASE_URL: postgresql://graphraguser:graphragpassword@db:5432/graphragdb
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    volumes:
+      - graphrag_outputs:/app/outputs
+    depends_on:
+      - db
+      - ingestion-service
+
+  api-service:
+    build: ./api_service
+    environment:
+      DATABASE_URL: postgresql://graphraguser:graphragpassword@db:5432/graphragdb
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GRAPH_OUTPUT_PATH: /app/graph_data
+    ports:
+      - "8000:8000"
+    volumes:
+      - graphrag_outputs:/app/graph_data
+    depends_on:
+      - db
+      - graphrag-processor
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - api-service
+      
+  ocr-service:
+    build: ./ocr_service
+    ports:
+      - "5000:5000"
+    environment:
+      INPUT_DIR: /app/input
+      OUTPUT_DIR: /app/output
+      POLL_INTERVAL: 5
+    volumes:
+      - ocr_input:/app/input
+      - ocr_output:/app/output
+
+volumes:
+  pg_data:
+  graphrag_outputs:
+  ocr_input:
+  ocr_output:
+  mg_data:
