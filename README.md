@@ -84,8 +84,10 @@ The application is fully containerized using Docker and consists of the followin
 
 #### Manual Addition
 1. Place your documents (PDF, DOCX, TXT, images) in the `data` directory
-2. The ingestion service will automatically process them
-3. The GraphRAG processor will build the knowledge graph
+2. The ingestion service will automatically process them. Run `./scripts/check_ingestion.sh`
+   ![to check ingestion progress in CLI](https://github.com/user-attachments/assets/ed2c15f7-f9ec-4ca9-a9cd-379400adb173)
+
+4. The GraphRAG processor will build the knowledge graph
 
 > **Note:** The system supports scanned PDFs and images through OCR processing
 
