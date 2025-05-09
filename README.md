@@ -38,13 +38,13 @@ The application is fully containerized using Docker and consists of the followin
 ### 4. API Service
 - Processes user queries
 - Performs vector similarity search
-- Enhances retrieval with graph data
+- [TODO] Enhances retrieval with graph data
 - Generates comprehensive answers
 
 ### 5. Frontend
 - Provides a user-friendly interface
 - Displays answers with citations
-- Shows relevant chunks, entities, and community insights
+- Shows relevant chunks, [TODO] entities, and [TODO] community insights
 
 ## Getting Started
 
@@ -58,7 +58,7 @@ The application is fully containerized using Docker and consists of the followin
 1. Clone this repository:
    ```
    git clone <repository-url>
-   cd writehere-graphrag
+   cd containerized-rag-starter-kit 
    ```
 
 2. Create a `.env` file in the root directory with your OpenAI API key:
@@ -161,15 +161,14 @@ For handling scanned documents and images:
 1. Open the frontend at http://localhost:8080
 2. Enter your query in the search box
 3. View the generated answer with citations
-4. Explore the relevant chunks, entities, and community insights
-
+4. Explore the relevant chunks
 ## Technical Details
 
 ### Vector Storage and Search
 
 The system uses PostgreSQL with the pgvector extension to store and search vector embeddings, enabling efficient similarity search for relevant document chunks.
 
-### Knowledge Graph Construction
+### [TODO] Knowledge Graph Construction
 
 The GraphRAG processor extracts entities from document chunks using spaCy and builds a knowledge graph representing relationships between entities and chunks.
 
@@ -179,7 +178,7 @@ When a user submits a query:
 
 1. The query is embedded using OpenAI
 2. Relevant chunks are retrieved using vector search
-3. The knowledge graph is queried for related entities and communities
+3. [TODO] The knowledge graph is queried for related entities and communities
 4. A comprehensive answer is generated with citations
 
 ## Development
