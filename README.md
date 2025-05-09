@@ -1,6 +1,6 @@
-# GraphRAG Query System
+# Starter PGVector/GraphRAG Query System
 
-A containerized application that generates paragraph answers with references based on user queries, powered by GraphRAG technology.
+A containerized application that generates paragraph answers with references based on user queries, powered by PGVector technology.
 
 ## Overview
 
@@ -10,9 +10,9 @@ This project implements a full-stack RAG (Retrieval-Augmented Generation) system
 
 - Document ingestion and chunking
 - Vector embeddings with OpenAI
-- Entity extraction and relationship mapping
-- Knowledge graph construction
-- GraphRAG-enhanced retrieval
+- [TODO] Entity extraction and relationship mapping
+- [TODO] Knowledge graph construction
+- [TODO] GraphRAG-enhanced retrieval
 - Paragraph generation with citations
 - Interactive web interface
 
