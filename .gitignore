@@ -2,3 +2,7 @@
 .env
 data
 error.txt
+
+.DS_Store
+node_modules
+yarn.lock

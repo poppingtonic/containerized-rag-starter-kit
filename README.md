@@ -78,6 +78,20 @@ The application is fully containerized using Docker and consists of the followin
    - API: http://localhost:8000
    - Database: localhost:5433 (PostgreSQL)
 
+## Development
+
+#### Frontend
+
+1. Go to /frontend
+
+2. Run `$ yarn`
+
+3. Run `$ yarn dev`
+
+4. Open browser to http://localhost:5173/
+
+## FAQ
+
 ## Usage
 
 ### Adding Documents
