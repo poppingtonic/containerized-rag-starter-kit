@@ -26,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger("import_with_ocr")
 
 # OCR service configuration
-OCR_SERVICE_URL = os.environ.get("OCR_SERVICE_URL", "http://localhost:5000")
+OCR_SERVICE_URL = os.environ.get("OCR_SERVICE_URL", "http://localhost:1337")
 
 # Initialize mime types
 mimetypes.init()

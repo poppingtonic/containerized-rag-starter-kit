@@ -65,7 +65,7 @@ services:
   ocr-service:
     build: ./ocr_service
     ports:
-      - "5000:5000"
+      - "1337:1337"
     environment:
       INPUT_DIR: /app/input
       OUTPUT_DIR: /app/output

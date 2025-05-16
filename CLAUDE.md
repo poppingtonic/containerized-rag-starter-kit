@@ -175,7 +175,7 @@ Important ports:
 - API: 8000
 - Ingestion Service: 5050
 - PostgreSQL: 5433 (exposed to host, 5432 internally)
-- OCR Service: 5000
+- OCR Service: 1337
 
 These can be set in a `.env` file at the project root. See `env.example` for a template.
 
