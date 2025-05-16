@@ -1,0 +1,12 @@
+{
+    "name": "containerized-rag-starter-kit",
+    "version": "1.0.1",
+    "private": true,
+    "scripts": {
+      "start": "docker-compose up -d && yarn frontend:dev",
+      "frontend:dev": "cd frontend && yarn dev",
+      "frontend:build": "cd frontend && yarn build",
+      "frontend:serve": "cd frontend && yarn serve",
+      "stop": "docker-compose down"
+    }
+  }
