@@ -260,7 +260,7 @@ if __name__ == '__main__':
     watcher_thread.start()
     
     # Start the Flask app
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=1337)
 else:
     # When running with Gunicorn, start the file watcher
     watcher_thread = Thread(target=run_file_watcher, daemon=True)
