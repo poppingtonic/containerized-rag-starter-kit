@@ -112,7 +112,7 @@ export default {
   name: 'IngestionProgress',
   data() {
     return {
-      isExpanded: true,  // Start expanded to show progress initially
+      isExpanded: false,  // Start collapsed
       loading: false,
       error: null,
       triggeringIngestion: false,
@@ -129,10 +129,9 @@ export default {
     };
   },
   mounted() {
-    // Auto-fetch progress when component mounts
-    this.fetchProgress();
+    // Don't auto-fetch on mount since we start collapsed
     
-    // Set up auto-refresh every 30 seconds
+    // Set up auto-refresh every 30 seconds when expanded
     this.refreshInterval = setInterval(() => {
       if (this.isExpanded) {
         this.fetchProgress();
@@ -160,7 +159,20 @@ export default {
         const response = await fetch('/api/ingestion/progress');
         
         if (!response.ok) {
-          throw new Error(`API error: ${response.status}`);
+          const text = await response.text();
+          let message = `API error: ${response.status}`;
+          try {
+            const data = JSON.parse(text);
+            message = data.detail || data.message || message;
+          } catch (e) {
+            // If not JSON, use status text
+            if (response.status === 502) {
+              message = 'Ingestion service is not available. Please check if the ingestion service container is running.';
+            } else if (response.status === 503) {
+              message = 'Ingestion service is temporarily unavailable.';
+            }
+          }
+          throw new Error(message);
         }
         
         this.progress = await response.json();
@@ -185,7 +197,17 @@ export default {
         });
         
         if (!response.ok) {
-          throw new Error(`API error: ${response.status}`);
+          const text = await response.text();
+          let message = `API error: ${response.status}`;
+          try {
+            const data = JSON.parse(text);
+            message = data.detail || data.message || message;
+          } catch (e) {
+            if (response.status === 502 || response.status === 503) {
+              message = 'Ingestion service is not available. Please check if the service is running.';
+            }
+          }
+          throw new Error(message);
         }
         
         const result = await response.json();
@@ -228,7 +250,7 @@ export default {
 
 <style>
 .ingestion-progress {
-  background-color: var(--card-bg);
+  background-color: #ffffff;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
   margin-bottom: 1.5rem;
@@ -242,19 +264,19 @@ export default {
   align-items: center;
   padding: 1rem 1.5rem;
   cursor: pointer;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid #dee2e6;
 }
 
 .progress-header h3 {
   margin: 0;
   font-size: 1.1rem;
-  color: var(--primary-color);
+  color: #4a6cf7;
 }
 
 .toggle-btn {
   border: none;
   background: none;
-  color: var(--secondary-color);
+  color: #6c757d;
   cursor: pointer;
   font-size: 1.2rem;
 }
@@ -289,8 +311,8 @@ export default {
 .progress-section h4 {
   margin-bottom: 1rem;
   font-size: 1rem;
-  color: var(--dark-color);
-  border-bottom: 1px solid var(--border-color);
+  color: #343a40;
+  border-bottom: 1px solid #dee2e6;
   padding-bottom: 0.5rem;
 }
 
@@ -313,12 +335,12 @@ export default {
 .stat-value {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--primary-color);
+  color: #4a6cf7;
 }
 
 .stat-label {
   font-size: 0.85rem;
-  color: var(--secondary-color);
+  color: #6c757d;
   margin-top: 0.5rem;
 }
 
@@ -332,7 +354,7 @@ export default {
 
 .progress-bar {
   height: 100%;
-  background-color: var(--primary-color);
+  background-color: #4a6cf7;
   border-radius: 12px;
   color: white;
   text-align: center;
@@ -345,7 +367,7 @@ export default {
 
 .progress-details {
   font-size: 0.85rem;
-  color: var(--secondary-color);
+  color: #6c757d;
   text-align: right;
 }
 
@@ -373,7 +395,7 @@ export default {
 .doc-type-count {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--primary-color);
+  color: #4a6cf7;
   margin-top: 0.25rem;
 }
 
@@ -390,7 +412,7 @@ export default {
 .recent-documents td {
   padding: 0.75rem;
   text-align: left;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid #dee2e6;
 }
 
 .recent-documents th {
@@ -427,7 +449,7 @@ export default {
 
 .last-updated {
   font-size: 0.85rem;
-  color: var(--secondary-color);
+  color: #6c757d;
 }
 
 .trigger-status {
