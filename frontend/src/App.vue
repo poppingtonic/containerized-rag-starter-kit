@@ -1,231 +1,167 @@
 <template>
-  <div class="app">
-    <header class="app-header">
-      <div class="container">
-        <h1 class="app-title">GraphRAG Query Interface</h1>
-        <p>Ask questions about your documents with enhanced knowledge graph retrieval</p>
-      </div>
-    </header>
-    
-    <main class="container">
-      <IngestionProgress />
-      
-      <div class="card query-form">
-        <form @submit.prevent="submitQuery">
-          <div class="form-group">
-            <label for="query-input">Enter your question:</label>
-            <input
-              id="query-input"
-              v-model="queryInput"
-              type="text"
-              class="form-control"
-              placeholder="e.g., What are the key benefits of GraphRAG?">
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary" :disabled="loading">
-              <span v-if="loading" class="spinner"></span>
-              <span v-else>Search</span>
-            </button>
-          </div>
-        </form>
-      </div>
-      
-      <div v-if="error" class="error-message card">
-        <p>{{ error }}</p>
-      </div>
-      
-      <div v-if="results" class="results">
-        <div class="card results-card">
-          <h2>Answer</h2>
-          <div class="answer" v-html="formattedAnswer"></div>
-          
-          <div v-if="results.references && results.references.length" class="references">
-            <h4>References:</h4>
-            <ol>
-              <li v-for="(reference, index) in results.references" :key="index">
-                {{ reference }}
-              </li>
-            </ol>
-          </div>
-        </div>
+  <div id="app">
+    <nav class="navbar">
+      <div class="nav-container">
+        <router-link to="/" class="nav-brand">
+          <h1>GraphRAG Query System</h1>
+        </router-link>
         
-        <div class="card">
-          <div class="nav-tabs">
-            <div :class="['nav-tab', { active: activeTab === 'chunks' }]" 
-                 @click="activeTab = 'chunks'">
-              Relevant Chunks
-            </div>
-            <div :class="['nav-tab', { active: activeTab === 'entities' }]" 
-                 @click="activeTab = 'entities'">
-              Entities
-            </div>
-            <div :class="['nav-tab', { active: activeTab === 'communities' }]" 
-                 @click="activeTab = 'communities'">
-              Community Insights
-            </div>
-          </div>
-          
-          <div class="tab-content">
-            <!-- Chunks Tab -->
-            <div v-if="activeTab === 'chunks'" class="chunks-tab">
-              <div v-for="(chunk, index) in results.chunks" :key="index" 
-                   class="chunk-item">
-                <h4>Document Chunk {{ index + 1 }} 
-                  <small>(Similarity: {{ (chunk.similarity * 100).toFixed(1) }}%)</small>
-                </h4>
-                <p class="chunk-text">{{ chunk.text }}</p>
-                <p class="chunk-source">Source: {{ chunk.source }}</p>
-              </div>
-            </div>
-            
-            <!-- Entities Tab -->
-            <div v-if="activeTab === 'entities'" class="entities-tab">
-              <div v-if="results.entities && results.entities.length">
-                <div v-for="(entity, index) in results.entities" :key="index" 
-                     class="entity-item">
-                  <h4>{{ entity.entity }} 
-                    <small>({{ entity.entity_type }})</small>
-                  </h4>
-                  <p class="entity-relevance">Relevance: {{ (entity.relevance * 100).toFixed(1) }}%</p>
-                </div>
-              </div>
-              <div v-else>
-                <p>No entity information available.</p>
-              </div>
-            </div>
-            
-            <!-- Communities Tab -->
-            <div v-if="activeTab === 'communities'" class="communities-tab">
-              <div v-if="results.communities && results.communities.length">
-                <div v-for="(community, index) in results.communities" :key="index" 
-                     class="community-item">
-                  <h4>Community {{ community.community_id }}</h4>
-                  <p class="community-summary">{{ community.summary }}</p>
-                  <p class="community-entities"><strong>Key entities:</strong> 
-                    {{ community.entities.join(', ') }}
-                  </p>
-                  <p class="community-relevance">Relevance: {{ (community.relevance * 100).toFixed(1) }}%</p>
-                </div>
-              </div>
-              <div v-else>
-                <p>No community insights available.</p>
-              </div>
-            </div>
-          </div>
+        <div class="nav-links">
+          <router-link to="/" class="nav-link" :class="{ active: $route.path === '/' }">
+            <i class="fas fa-search"></i> Search
+          </router-link>
+          <router-link to="/cache" class="nav-link" :class="{ active: $route.path === '/cache' }">
+            <i class="fas fa-database"></i> Cache
+          </router-link>
+          <router-link to="/evaluation" class="nav-link" :class="{ active: $route.path === '/evaluation' }">
+            <i class="fas fa-chart-bar"></i> Evaluation
+          </router-link>
+          <router-link to="/export" class="nav-link" :class="{ active: $route.path === '/export' }">
+            <i class="fas fa-download"></i> Export
+          </router-link>
         </div>
       </div>
-    </main>
+    </nav>
     
-    <footer class="app-footer">
-      <div class="container">
-        <p>GraphRAG Query System &copy; {{ new Date().getFullYear() }}</p>
-      </div>
-    </footer>
+    <main class="main-container">
+      <router-view />
+    </main>
   </div>
 </template>
 
 <script>
-import { marked } from 'marked';
-import { useStore } from 'vuex';
-import { computed, ref } from 'vue';
-import IngestionProgress from './components/IngestionProgress.vue';
-
 export default {
-  name: 'App',
-  components: {
-    IngestionProgress
-  },
-  setup() {
-    const store = useStore();
-    const queryInput = ref('');
-    const activeTab = ref('chunks');
-    
-    // Computed properties from store state
-    const results = computed(() => store.state.results);
-    const loading = computed(() => store.state.loading);
-    const error = computed(() => store.state.error);
-    
-    // Format answer with markdown
-    const formattedAnswer = computed(() => {
-      if (!results.value || !results.value.answer) return '';
-      
-      // Process citations in the format [1], [2], etc.
-      let processedAnswer = results.value.answer.replace(
-        /\[(\d+)\]/g, 
-        (match, p1) => `<span class="citation">${match}</span>`
-      );
-      
-      return marked.parse(processedAnswer);
-    });
-    
-    // Submit query
-    const submitQuery = () => {
-      if (!queryInput.value.trim()) return;
-      store.dispatch('submitQuery', queryInput.value);
-    };
-    
-    return {
-      queryInput,
-      activeTab,
-      results,
-      loading,
-      error,
-      formattedAnswer,
-      submitQuery
-    };
-  }
-};
+  name: 'App'
+}
 </script>
 
 <style>
-.form-group {
-  margin-bottom: 1rem;
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #f5f7fa;
+  color: #333;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.navbar {
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 60px;
+}
+
+.nav-brand {
+  text-decoration: none;
+  color: #333;
+}
+
+.nav-brand h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.nav-links {
+  display: flex;
+  gap: 30px;
+}
+
+.nav-link {
+  text-decoration: none;
+  color: #666;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 5px;
+  transition: all 0.2s;
 }
 
-.form-actions {
-  margin-top: 1rem;
+.nav-link:hover {
+  color: #007bff;
+  background: #f0f7ff;
 }
 
-.chunk-item, .entity-item, .community-item {
-  padding: 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  margin-bottom: 1rem;
+.nav-link.active {
+  color: #007bff;
+  background: #e7f3ff;
 }
 
-.chunk-text {
-  margin: 0.5rem 0;
-  white-space: pre-line;
+.nav-link i {
+  font-size: 16px;
 }
 
-.chunk-source, .entity-relevance, .community-relevance {
-  font-size: 0.85rem;
-  color: var(--secondary-color);
+.main-container {
+  flex: 1;
+  padding: 20px 0;
 }
 
-.app-footer {
-  margin-top: auto;
-  padding: 1.5rem 0;
-  background-color: var(--light-color);
-  border-top: 1px solid var(--border-color);
-  text-align: center;
-  color: var(--secondary-color);
-}
-
+/* Global utility classes */
 .error-message {
-  background-color: #f8d7da;
+  background: #f8d7da;
   color: #721c24;
-  border-color: #f5c6cb;
+  padding: 15px;
+  border-radius: 5px;
+  margin: 20px 0;
 }
 
-.citation {
-  color: var(--primary-color);
-  font-weight: 500;
+.loading {
+  text-align: center;
+  padding: 50px;
+  color: #666;
 }
+
+button {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  font-family: inherit;
+  font-size: 14px;
+}
+
+/* Font Awesome icons fallback */
+.fas::before {
+  font-family: monospace;
+  font-weight: normal;
+}
+
+.fa-search::before { content: "🔍"; }
+.fa-database::before { content: "💾"; }
+.fa-chart-bar::before { content: "📊"; }
+.fa-download::before { content: "📥"; }
+.fa-star::before { content: "⭐"; }
+.fa-spinner::before { content: "⏳"; }
+.fa-times::before { content: "✕"; }
 </style>
