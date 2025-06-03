@@ -24,7 +24,7 @@ async def export_training_data(
                 query = """
                     SELECT 
                         qc.id,
-                        qc.query,
+                        qc.query_text,
                         qc.answer,
                         qc.references,
                         qc.chunks,
@@ -147,7 +147,7 @@ async def export_evaluation_report():
                 # Get queries with feedback
                 cursor.execute("""
                     SELECT 
-                        qc.query,
+                        qc.query_text,
                         qc.answer,
                         LENGTH(qc.answer) as answer_length,
                         json_array_length(qc.references::json) as num_references,
