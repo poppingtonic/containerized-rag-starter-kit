@@ -86,7 +86,7 @@ class FeedbackService:
                 cursor.execute("""
                     SELECT 
                         qc.id,
-                        qc.query,
+                        qc.query_text,
                         qc.answer,
                         qc.references,
                         qc.created_at,

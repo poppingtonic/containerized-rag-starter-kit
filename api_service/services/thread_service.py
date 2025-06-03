@@ -70,13 +70,13 @@ class ThreadService:
                         uf.thread_title,
                         uf.query_cache_id,
                         uf.created_at,
-                        qc.query,
+                        qc.query_text,
                         COUNT(tm.id) as message_count
                     FROM user_feedback uf
                     INNER JOIN query_cache qc ON uf.query_cache_id = qc.id
                     LEFT JOIN thread_messages tm ON uf.id = tm.feedback_id
                     WHERE uf.is_thread = true
-                    GROUP BY uf.id, uf.thread_title, uf.query_cache_id, uf.created_at, qc.query
+                    GROUP BY uf.id, uf.thread_title, uf.query_cache_id, uf.created_at, qc.query_text
                     ORDER BY uf.created_at DESC
                 """)
                 
@@ -105,7 +105,7 @@ class ThreadService:
                         uf.thread_title,
                         uf.query_cache_id,
                         uf.created_at,
-                        qc.query,
+                        qc.query_text,
                         qc.answer
                     FROM user_feedback uf
                     INNER JOIN query_cache qc ON uf.query_cache_id = qc.id
