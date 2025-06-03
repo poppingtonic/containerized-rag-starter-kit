@@ -51,18 +51,44 @@ def fetch_data():
 
 # Extract entities from text using spaCy
 def extract_entities(text):
-    doc = nlp(text)
     entities = {}
     
-    for ent in doc.ents:
-        entity_type = ent.label_
-        entity_text = ent.text
+    try:
+        # Limit text length to avoid memory issues
+        if len(text) > 10000:
+            text = text[:10000]
+            
+        doc = nlp(text)
         
-        if entity_type not in entities:
-            entities[entity_type] = []
+        for ent in doc.ents:
+            # Skip very short entities or those with non-alphanumeric characters only
+            if len(ent.text.strip()) < 2 or not any(c.isalnum() for c in ent.text):
+                continue
+                
+            entity_type = ent.label_
+            entity_text = ent.text.strip()
+            
+            if entity_type not in entities:
+                entities[entity_type] = []
+            
+            if entity_text not in entities[entity_type]:
+                entities[entity_type].append(entity_text)
         
-        if entity_text not in entities[entity_type]:
-            entities[entity_type].append(entity_text)
+        # Add some additional entities based on noun chunks for more connections
+        if len(entities) < 3:
+            for chunk in doc.noun_chunks:
+                if len(chunk.text.strip()) > 3 and len(chunk.text.strip()) < 50:
+                    if "NOUN_CHUNK" not in entities:
+                        entities["NOUN_CHUNK"] = []
+                    
+                    chunk_text = chunk.text.strip()
+                    if chunk_text not in entities["NOUN_CHUNK"]:
+                        entities["NOUN_CHUNK"].append(chunk_text)
+    
+    except Exception as e:
+        print(f"Error extracting entities: {e}")
+        # Return empty dict on error rather than failing
+        return {}
     
     return entities
 
@@ -111,14 +137,23 @@ def generate_entity_summaries(G, chunks_data):
     try:
         import community as community_louvain
         partition = community_louvain.best_partition(G)
-    except ImportError:
-        # Fallback to a simpler approach
-        from networkx.algorithms import community
-        partition = {}
-        communities = list(community.greedy_modularity_communities(G))
-        for i, comm in enumerate(communities):
-            for node in comm:
-                partition[node] = i
+        print("Successfully used Louvain community detection")
+    except Exception as e:
+        print(f"Louvain method failed: {e}")
+        try:
+            # Fallback to a simpler approach using networkx built-in
+            print("Falling back to networkx community detection")
+            from networkx.algorithms import community
+            partition = {}
+            communities = list(community.greedy_modularity_communities(G))
+            for i, comm in enumerate(communities):
+                for node in comm:
+                    partition[node] = i
+        except Exception as e:
+            print(f"Community detection failed: {e}")
+            # Last resort: create a simple partition with all entities in one community
+            print("Creating simple partition as last resort")
+            partition = {node: 0 for node in G.nodes()}
     
     # Group nodes by community
     communities = {}
@@ -251,7 +286,7 @@ def process_graph():
     G = build_knowledge_graph(chunks_data)
     
     # Generate summaries
-    summaries = generate_entity_summaries(G)
+    summaries = generate_entity_summaries(G, chunks_data)
     
     # Save outputs
     save_outputs(G, summaries)

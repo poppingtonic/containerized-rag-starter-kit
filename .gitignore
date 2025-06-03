@@ -2,3 +2,4 @@
 .env
 data
 error.txt
+*.pyc

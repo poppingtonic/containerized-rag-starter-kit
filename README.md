@@ -10,11 +10,14 @@ This project implements a full-stack RAG (Retrieval-Augmented Generation) system
 
 - Document ingestion and chunking
 - Vector embeddings with OpenAI
-- [TODO] Entity extraction and relationship mapping
-- [TODO] Knowledge graph construction
-- [TODO] GraphRAG-enhanced retrieval
+- Entity extraction and relationship mapping (fixed)
+- Knowledge graph construction (fixed)
+- GraphRAG-enhanced retrieval (fixed)
 - Paragraph generation with citations
 - Interactive web interface
+- Query memory with similarity matching
+- User feedback and favorites
+- Document-grounded conversation threads
 
 ## Architecture
 
@@ -31,20 +34,23 @@ The application is fully containerized using Docker and consists of the followin
 
 ### 3. GraphRAG Processor
 - Builds a knowledge graph from document chunks
-- Extracts entities and relationships
+- Extracts entities and relationships (fixed)
 - Generates community summaries
 - Outputs graph data for enhanced retrieval
 
 ### 4. API Service
 - Processes user queries
 - Performs vector similarity search
-- [TODO] Enhances retrieval with graph data
+- Enhances retrieval with graph data
 - Generates comprehensive answers
+- Caches results for similar future queries
+- Supports conversation threads and feedback
 
 ### 5. Frontend
 - Provides a user-friendly interface
 - Displays answers with citations
-- Shows relevant chunks, [TODO] entities, and [TODO] community insights
+- Shows relevant chunks, entities, and community insights
+- Features for feedback, favorites, and conversation threads
 
 ## Getting Started
 
@@ -75,6 +81,23 @@ The application is fully containerized using Docker and consists of the followin
    - Frontend: http://localhost:8080
    - API: http://localhost:8000
    - Database: localhost:5433 (PostgreSQL)
+
+### Database Backup and Restore
+
+The system includes scripts for database backup and restore operations:
+
+```bash
+# Create a manual backup (default location: ./backups)
+./scripts/backup_db.sh [backup_directory]
+
+# Restore from a backup
+./scripts/restore_db.sh path/to/backup_file.sql.gz
+
+# Setup scheduled backups with rotation (keeps last 7 by default)
+./scripts/scheduled_backup.sh [backup_directory] [retention_count]
+```
+
+For detailed information, see [Database Backup and Restore](docs/backup_restore.md).
 
 ## Usage
 
@@ -168,7 +191,7 @@ For handling scanned documents and images:
 
 The system uses PostgreSQL with the pgvector extension to store and search vector embeddings, enabling efficient similarity search for relevant document chunks.
 
-### [TODO] Knowledge Graph Construction
+### Knowledge Graph Construction
 
 The GraphRAG processor extracts entities from document chunks using spaCy and builds a knowledge graph representing relationships between entities and chunks.
 
@@ -177,9 +200,25 @@ The GraphRAG processor extracts entities from document chunks using spaCy and bu
 When a user submits a query:
 
 1. The query is embedded using OpenAI
-2. Relevant chunks are retrieved using vector search
-3. [TODO] The knowledge graph is queried for related entities and communities
-4. A comprehensive answer is generated with citations
+2. The system checks memory for similar previous queries
+3. If not found in memory, relevant chunks are retrieved using vector search
+4. The knowledge graph is queried for related entities and communities
+5. A comprehensive answer is generated with citations
+6. The result is stored in memory for future similar queries
+
+### Memory and Conversation Features
+
+The system includes several enhanced features:
+
+1. **Query Memory**: The system remembers previous queries and can instantly retrieve answers for similar questions without regenerating them.
+
+2. **User Feedback**: Users can rate answers on a 5-star scale and provide text feedback.
+
+3. **Favorites**: Users can bookmark particularly useful answers for quick reference later.
+
+4. **Conversation Threads**: Users can start a conversation thread from any query, enabling follow-up questions with document-grounded responses.
+
+5. **Enhanced Retrieval**: Conversation threads can optionally include document retrieval to ground responses in the knowledge base.
 
 ## Development
 
@@ -189,10 +228,12 @@ When a user submits a query:
 writehere-graphrag/
 ├── data/                  # Document storage directory
 ├── db/                    # Database configuration
+├── docs/                  # Documentation files
 ├── ingestion_service/     # Document processing service
 ├── graphrag_processor/    # Knowledge graph generator
 ├── api_service/           # Query processing API
 ├── frontend/              # Vue.js web interface
+├── scripts/               # Utility scripts for backup, import, etc.
 └── docker-compose.yml     # Container orchestration
 ```
 
