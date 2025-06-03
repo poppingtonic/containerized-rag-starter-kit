@@ -2,7 +2,11 @@
 .env
 data
 error.txt
+<<<<<<< HEAD
 
 .DS_Store
 node_modules
 yarn.lock
+=======
+*.pyc
+>>>>>>> a4b87d4 (Update docs)
