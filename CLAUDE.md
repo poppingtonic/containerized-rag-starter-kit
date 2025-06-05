@@ -50,6 +50,12 @@ python ./scripts/import_with_metadata.py /home/mu/Zotero/storage
 # Import with OCR support (for scanned documents)
 python ./scripts/import_with_ocr.py /home/mu/Zotero/storage
 
+# Restart a specific service (useful after code changes)
+./scripts/restart_service.sh graphrag-processor --build
+
+# View available services and restart options
+./scripts/restart_service.sh --help
+
 # Trigger reprocessing of documents via API
 curl -X POST http://localhost:5050/trigger-ingestion
 
@@ -62,6 +68,18 @@ curl http://localhost:8000/health
 # View ingestion progress
 curl http://localhost:8000/ingestion/progress
 
+# View memory statistics
+curl http://localhost:8000/memory/stats
+
+# Clear the system's memory
+curl -X DELETE http://localhost:8000/memory/clear
+
+# List favorite queries
+curl http://localhost:8000/favorites
+
+# List all conversation threads
+curl http://localhost:8000/threads
+
 # Run API service directly (for development)
 cd api_service
 python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
@@ -70,6 +88,15 @@ python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
 cd frontend
 npm install
 npm run dev
+
+# Backup the database
+./scripts/backup_db.sh [optional_backup_directory]
+
+# Restore from a backup
+./scripts/restore_db.sh path/to/backup.sql.gz
+
+# Set up scheduled backups with retention
+./scripts/scheduled_backup.sh [backup_directory] [retention_count]
 ```
 
 ## Architecture
@@ -79,6 +106,8 @@ The application consists of five containerized services:
 1. **db** - PostgreSQL with pgvector
    - Stores document chunks in `document_chunks` table
    - Stores embeddings in `chunk_embeddings` table
+   - Stores query memory in `query_cache` table
+   - Stores user feedback and threads in `user_feedback` and `thread_messages` tables
    - Enables vector similarity search
 
 2. **ingestion-service**
@@ -103,13 +132,19 @@ The application consists of five containerized services:
    - Performs vector similarity search
    - Enhances retrieval with graph data
    - Generates answers with OpenAI
+   - Remembers past queries for faster responses
+   - Supports user feedback and favorites
+   - Manages conversation threads with document-grounded dialog
    - Exposes `/query` endpoint for the frontend
 
 5. **frontend**
    - Vue.js SPA
    - User interface for submitting queries
    - Displays answers with citations
-   - Shows relevant chunks, entities, and community insights
+   - Shows relevant chunks
+   - Allows users to provide feedback and favorite queries
+   - Supports creating conversation threads from interesting queries
+   - Provides dialog capability with optional retrieval enhancement
 
 6. **ocr-service**
    - Dedicated OCR processing service
@@ -124,11 +159,17 @@ The application consists of five containerized services:
 3. GraphRAG processor builds a knowledge graph from the chunks and embeddings
 4. User submits a query through the frontend
 5. API service processes the query:
-   - Embeds the query
-   - Finds relevant chunks through vector similarity
-   - Enhances retrieval with graph data
-   - Generates an answer with citations
+   - Checks memory for matching or semantically similar queries
+   - If found in memory, returns remembered result
+   - If not found in memory:
+     - Embeds the query
+     - Finds relevant chunks through vector similarity
+     - Enhances retrieval with graph data
+     - Generates an answer with citations
+     - Stores result in memory for future queries
 6. Frontend displays the result to the user
+7. User can provide feedback, favorite the query, or create a conversation thread
+8. In conversation threads, users can continue the dialog with options for document-grounded responses
 
 ## Key Files and Components
 
@@ -136,7 +177,17 @@ The application consists of five containerized services:
 - Main API routes in FastAPI
 - Query processing and answer generation
 - Vector search and graph-enhanced retrieval
+- Memory management
+- Feedback and favorites functionality
+- Thread management and dialog capability
 - Health and status endpoints
+
+### Database Schema
+- `document_chunks` table - Stores text chunks and metadata
+- `chunk_embeddings` table - Stores vector embeddings with pgvector
+- `query_cache` table - Stores remembered query results
+- `user_feedback` table - Stores user feedback, favorites, and thread metadata
+- `thread_messages` table - Stores conversation messages for threads
 
 ### Ingestion Service (`ingestion_service/app.py`)
 - Document processing pipeline
@@ -156,10 +207,6 @@ The application consists of five containerized services:
 - `scripts/import_with_metadata.py` - Advanced import with metadata
 - `scripts/import_with_ocr.py` - OCR-enabled import
 
-### Database Schema
-- `document_chunks` table - Stores text chunks and metadata
-- `chunk_embeddings` table - Stores vector embeddings with pgvector
-
 ## Configuration
 
 The system is configured through environment variables:
@@ -169,6 +216,9 @@ The system is configured through environment variables:
 - `CHUNK_OVERLAP` - Overlap between chunks (default: 50)
 - `PROCESSING_INTERVAL` - How often the GraphRAG processor runs (default: 3600 seconds)
 - `MAX_WORKERS` - Number of parallel workers for ingestion (default: 4)
+- `ENABLE_MEMORY` - Enable/disable query memory (default: true)
+- `MEMORY_SIMILARITY_THRESHOLD` - Threshold for semantic memory matches (default: 0.95)
+- `ENABLE_DIALOG_RETRIEVAL` - Enable/disable retrieval enhancement in dialog threads (default: true)
 
 Important ports:
 - Frontend: 8080
@@ -183,12 +233,14 @@ These can be set in a `.env` file at the project root. See `env.example` for a t
 
 - Vector embeddings use OpenAI's `text-embedding-ada-002` model
 - Entity extraction uses spaCy's `en_core_web_sm` model
-- Answer generation uses OpenAI's `gpt-3.5-turbo` model
+- Answer generation uses OpenAI's `gpt-4o` model
 - The knowledge graph is built using networkx
 - The frontend is built with Vue 3 Composition API
 - OCR processing uses Tesseract and OCRmyPDF
 - Handles scanned PDFs and image files through OCR
 - Deduplication is performed based on content hashes
+- Query memory supports both exact matches and semantic similarity
+- Thread dialog can be enhanced with document retrieval
 
 ## Common Development Tasks
 
@@ -208,3 +260,15 @@ To customize how answers are generated:
 1. Update the `generate_answer` function in `api_service/app.py`
 2. Adjust the prompt template to change answer style or format
 3. Consider modifying the model parameters or switching to a different model
+
+### Memory and Feedback Management
+To modify the memory and feedback behavior:
+1. Adjust the memory-related environment variables
+2. Modify the `check_memory` and `save_to_memory` functions in `api_service/app.py`
+3. Add additional fields to the feedback schema if needed
+
+### Thread Management
+To customize conversation threads:
+1. Modify the `generate_thread_message` function in `api_service/app.py`
+2. Adjust the thread creation and message handling logic
+3. Change the retrieval enhancement parameters
