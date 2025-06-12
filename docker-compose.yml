@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   db:
     build: ./db
@@ -29,6 +27,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      grobid:
+        condition: service_started
 
   graphrag-processor:
     build: ./graphrag_processor
@@ -74,9 +74,19 @@ services:
       - ocr_input:/app/input
       - ocr_output:/app/output
 
+  grobid:
+    image: lfoppiano/grobid:latest-crf
+    ports:
+      - "8070:8070"
+    environment:
+      GROBID_SERVICE: "processFulltextDocument"
+    volumes:
+      - grobid_data:/opt/grobid
+
 volumes:
   pg_data:
   graphrag_outputs:
   ocr_input:
   ocr_output:
   mg_data:
+  grobid_data:

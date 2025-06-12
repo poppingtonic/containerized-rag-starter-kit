@@ -3,7 +3,7 @@
     <nav class="navbar">
       <div class="nav-container">
         <router-link to="/" class="nav-brand">
-          <h1>GraphRAG Query System</h1>
+          <h1>AI Search</h1>
         </router-link>
         
         <div class="nav-links">

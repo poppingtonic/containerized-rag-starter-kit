@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GraphRAG Query System is a containerized application that generates paragraph answers with references based on user queries, powered by GraphRAG technology. The system processes documents, builds a knowledge graph of entities and their relationships, and provides comprehensive answers with citations.
+AI Search is a containerized application that generates paragraph answers with references based on user queries, powered by GraphRAG technology. The system processes documents, builds a knowledge graph of entities and their relationships, and provides comprehensive answers with citations.
 
 ## Common Commands
 
