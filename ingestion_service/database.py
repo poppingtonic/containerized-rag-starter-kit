@@ -3,7 +3,7 @@
 import psycopg2
 from psycopg2.extras import execute_values
 import json
-from .config import DB_URL
+from config import DB_URL
 
 
 def get_db_connection():

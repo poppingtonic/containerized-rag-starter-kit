@@ -6,11 +6,12 @@ from datetime import datetime
 from llama_index.core import Document
 from llama_index.core.node_parser import SentenceSplitter
 
-from .config import CHUNK_SIZE, CHUNK_OVERLAP
-from .file_processors import process_file
-from .file_tracker import is_file_processed, mark_file_processed, log_processing_error
-from .database import check_document_exists, store_chunks_and_embeddings
-from .embeddings import create_embeddings_batch
+from config import CHUNK_SIZE, CHUNK_OVERLAP
+from file_processors import process_file
+from file_tracker import is_file_processed, mark_file_processed, log_processing_error
+from database import check_document_exists, store_chunks_and_embeddings
+from embeddings import create_embeddings_batch
+from academic_processor import is_academic_paper, process_academic_paper
 
 
 def process_document(file_path):
@@ -36,12 +37,30 @@ def process_document(file_path):
         
         print(f"Starting processing of {file_name}...")
         
+        # Check if this is an academic paper and use appropriate processing
+        use_academic_processing = is_academic_paper(file_path)
+        
         # Process the file to extract content
         try:
-            content, ocr_applied, file_type = process_file(file_path)
+            if use_academic_processing:
+                print(f"Using academic processing pipeline for {file_name}")
+                content, ocr_applied, file_type, structured_data = process_academic_paper(file_path)
+            else:
+                content, ocr_applied, file_type = process_file(file_path)
+                structured_data = None
         except ValueError as e:
             print(f"Unsupported file type: {e}")
             return
+        except Exception as e:
+            print(f"Processing failed, falling back to standard pipeline: {e}")
+            # Fallback to standard processing if academic processing fails
+            try:
+                content, ocr_applied, file_type = process_file(file_path)
+                structured_data = None
+                use_academic_processing = False
+            except Exception as fallback_e:
+                print(f"Fallback processing also failed: {fallback_e}")
+                return
             
         # Skip if we couldn't extract any content
         if not content or content.strip() == "":
@@ -68,7 +87,9 @@ def process_document(file_path):
             "mime_type": file_type,
             "ocr_applied": ocr_applied,
             "content_hash": content_hash,
-            "processed_at": datetime.now().isoformat()
+            "processed_at": datetime.now().isoformat(),
+            "academic_processing": use_academic_processing,
+            "structured_data": structured_data if use_academic_processing else None
         }
         
         # Create document and chunk it

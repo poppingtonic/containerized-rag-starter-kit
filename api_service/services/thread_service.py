@@ -16,7 +16,7 @@ class ThreadService:
             with conn.cursor() as cursor:
                 # Get the original query and answer
                 cursor.execute("""
-                    SELECT query, answer FROM query_cache WHERE id = %s
+                    SELECT query_text, answer_text FROM query_cache WHERE id = %s
                 """, (request.memory_id,))
                 
                 cache_entry = cursor.fetchone()
@@ -36,7 +36,7 @@ class ThreadService:
                     # Update existing feedback to mark as thread
                     cursor.execute("""
                         UPDATE user_feedback 
-                        SET is_thread = true, thread_title = %s
+                        SET has_thread = true, thread_title = %s
                         WHERE id = %s
                         RETURNING id
                     """, (request.thread_title, feedback_entry['id']))
@@ -44,7 +44,7 @@ class ThreadService:
                     # Create new feedback entry with thread
                     cursor.execute("""
                         INSERT INTO user_feedback 
-                        (query_cache_id, is_thread, thread_title)
+                        (query_cache_id, has_thread, thread_title)
                         VALUES (%s, true, %s)
                         RETURNING id
                     """, (request.memory_id, request.thread_title))
@@ -70,13 +70,13 @@ class ThreadService:
                         uf.thread_title,
                         uf.query_cache_id,
                         uf.created_at,
-                        qc.query,
+                        qc.query_text,
                         COUNT(tm.id) as message_count
                     FROM user_feedback uf
                     INNER JOIN query_cache qc ON uf.query_cache_id = qc.id
                     LEFT JOIN thread_messages tm ON uf.id = tm.feedback_id
-                    WHERE uf.is_thread = true
-                    GROUP BY uf.id, uf.thread_title, uf.query_cache_id, uf.created_at, qc.query
+                    WHERE uf.has_thread = true
+                    GROUP BY uf.id, uf.thread_title, uf.query_cache_id, uf.created_at, qc.query_text
                     ORDER BY uf.created_at DESC
                 """)
                 
@@ -87,7 +87,7 @@ class ThreadService:
                         "id": thread["id"],
                         "title": thread["thread_title"],
                         "memory_id": thread["query_cache_id"],
-                        "original_query": thread["query"],
+                        "original_query": thread["query_text"],
                         "message_count": thread["message_count"],
                         "created_at": thread["created_at"].isoformat() if thread["created_at"] else None
                     }
@@ -105,11 +105,11 @@ class ThreadService:
                         uf.thread_title,
                         uf.query_cache_id,
                         uf.created_at,
-                        qc.query,
-                        qc.answer
+                        qc.query_text,
+                        qc.answer_text
                     FROM user_feedback uf
                     INNER JOIN query_cache qc ON uf.query_cache_id = qc.id
-                    WHERE uf.id = %s AND uf.is_thread = true
+                    WHERE uf.id = %s AND uf.has_thread = true
                 """, (thread_id,))
                 
                 thread_info = cursor.fetchone()
@@ -149,8 +149,8 @@ class ThreadService:
                     id=thread_info["id"],
                     title=thread_info["thread_title"],
                     memory_id=thread_info["query_cache_id"],
-                    original_query=thread_info["query"],
-                    original_answer=thread_info["answer"],
+                    original_query=thread_info["query_text"],
+                    original_answer=thread_info["answer_text"],
                     messages=formatted_messages,
                     created_at=thread_info["created_at"].isoformat() if thread_info["created_at"] else None
                 )
@@ -162,7 +162,7 @@ class ThreadService:
                 # Verify thread exists
                 cursor.execute("""
                     SELECT id FROM user_feedback 
-                    WHERE id = %s AND is_thread = true
+                    WHERE id = %s AND has_thread = true
                 """, (request.feedback_id,))
                 
                 if not cursor.fetchone():

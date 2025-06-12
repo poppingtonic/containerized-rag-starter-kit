@@ -6,7 +6,7 @@ import time
 import threading
 import traceback
 from datetime import datetime
-from .config import STATE_FILE, ERROR_LOG
+from config import STATE_FILE, ERROR_LOG
 
 # Global variables
 processed_files = set()

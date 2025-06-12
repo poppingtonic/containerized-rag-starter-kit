@@ -1,7 +1,7 @@
 <template>
   <div class="home-view">
     <div class="query-section">
-      <h1>GraphRAG Query System</h1>
+      <h1>AI Search</h1>
       <p class="subtitle">Query your documents with AI-powered search and knowledge graph enhancement</p>
       
       <form @submit.prevent="submitQuery" class="query-form">

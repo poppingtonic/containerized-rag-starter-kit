@@ -5,9 +5,9 @@ import threading
 from datetime import datetime
 from flask import Flask, jsonify, request
 
-from .file_discovery import queue_unprocessed_files
-from .file_tracker import processed_files, processing_lock, get_error_count
-from .config import MAX_WORKERS
+from file_discovery import queue_unprocessed_files
+from file_tracker import processed_files, processing_lock, get_error_count
+from config import MAX_WORKERS
 
 
 def create_api(processing_queue):

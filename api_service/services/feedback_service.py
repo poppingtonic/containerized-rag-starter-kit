@@ -86,8 +86,8 @@ class FeedbackService:
                 cursor.execute("""
                     SELECT 
                         qc.id,
-                        qc.query,
-                        qc.answer,
+                        qc.query_text,
+                        qc.answer_text,
                         qc.references,
                         qc.created_at,
                         uf.rating,
@@ -104,8 +104,8 @@ class FeedbackService:
                 return [
                     {
                         "id": fav["id"],
-                        "query": fav["query"],
-                        "answer": fav["answer"],
+                        "query": fav["query_text"],
+                        "answer": fav["answer_text"],
                         "references": json.loads(fav["references"]) if fav["references"] else [],
                         "created_at": fav["created_at"].isoformat() if fav["created_at"] else None,
                         "rating": fav["rating"],

@@ -24,8 +24,8 @@ async def export_training_data(
                 query = """
                     SELECT 
                         qc.id,
-                        qc.query,
-                        qc.answer,
+                        qc.query_text,
+                        qc.answer_text,
                         qc.references,
                         qc.chunks,
                         qc.entities,
@@ -58,8 +58,8 @@ async def export_training_data(
                 for entry in entries:
                     record = {
                         "id": entry["id"],
-                        "query": entry["query"],
-                        "answer": entry["answer"],
+                        "query": entry["query_text"],
+                        "answer": entry["answer_text"],
                         "references": json.loads(entry["references"]) if entry["references"] else [],
                         "rating": entry["rating"],
                         "is_favorite": entry["is_favorite"],
@@ -147,9 +147,9 @@ async def export_evaluation_report():
                 # Get queries with feedback
                 cursor.execute("""
                     SELECT 
-                        qc.query,
-                        qc.answer,
-                        LENGTH(qc.answer) as answer_length,
+                        qc.query_text,
+                        qc.answer_text,
+                        LENGTH(qc.answer_text) as answer_length,
                         json_array_length(qc.references::json) as num_references,
                         json_array_length(qc.chunks::json) as num_chunks,
                         uf.rating,

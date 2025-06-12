@@ -2,8 +2,8 @@
 
 import time
 from pathlib import Path
-from .config import DATA_DIR, GLOB_PATTERNS, FILE_BATCH_SIZE, QUEUE_BATCH_SIZE
-from .file_tracker import get_unprocessed_files
+from config import DATA_DIR, GLOB_PATTERNS, QUEUE_BATCH_SIZE
+from file_tracker import get_unprocessed_files
 
 
 def discover_files():

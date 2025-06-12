@@ -2,7 +2,7 @@
   <div class="app-container">
     <header class="header">
       <div class="header-content">
-        <h1>GraphRAG Query System</h1>
+        <h1>AI Search</h1>
         <p class="description">Ask questions about your documents</p>
       </div>
     </header>
@@ -167,7 +167,7 @@
 
     <footer class="footer">
       <div class="footer-content">
-        <p>GraphRAG Query System &copy; {{ new Date().getFullYear() }}</p>
+        <p>AI Search &copy; {{ new Date().getFullYear() }}</p>
       </div>
     </footer>
     

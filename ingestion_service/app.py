@@ -20,11 +20,11 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 # Import our modular components
-from .config import DATA_DIR, MAX_WORKERS
-from .file_tracker import load_processed_files, save_processed_files, processed_files
-from .file_discovery import queue_unprocessed_files
-from .document_processor import process_document
-from .api import create_api
+from config import DATA_DIR, MAX_WORKERS
+from file_tracker import load_processed_files, save_processed_files, processed_files
+from file_discovery import queue_unprocessed_files
+from document_processor import process_document
+from api import create_api
 
 
 # Global processing queue
