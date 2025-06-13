@@ -51,7 +51,8 @@ const store = createStore({
           },
           body: JSON.stringify({
             query: query,
-            max_results: 5
+            max_results: 5,
+            use_memory: true
           })
         });
         

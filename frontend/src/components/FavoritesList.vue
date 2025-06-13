@@ -188,9 +188,10 @@ export default {
         const response = await fetch('/api/favorites');
         if (response.ok) {
           const data = await response.json();
+          const favoritesData = data.favorites || [];
           
           // Add has_thread and thread_id properties
-          this.favorites = await this.enrichFavoritesWithThreadInfo(data);
+          this.favorites = await this.enrichFavoritesWithThreadInfo(favoritesData);
         } else {
           console.error('Failed to load favorites');
         }
@@ -209,7 +210,8 @@ export default {
           return favorites;
         }
         
-        const threads = await threadsResponse.json();
+        const threadsData = await threadsResponse.json();
+        const threads = threadsData.threads || [];
         
         // Create a map of query_cache_id to thread
         const threadMap = {};

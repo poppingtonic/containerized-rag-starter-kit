@@ -56,11 +56,11 @@ class MemoryService:
     
     def _format_memory_response(self, cache_entry: Dict, query: str) -> Dict[str, Any]:
         """Format a memory cache entry into a response."""
-        # Parse stored data
-        chunks = json.loads(cache_entry['chunks']) if cache_entry['chunks'] else []
-        entities = json.loads(cache_entry['entities']) if cache_entry['entities'] else []
-        communities = json.loads(cache_entry['communities']) if cache_entry['communities'] else []
-        references = json.loads(cache_entry['references']) if cache_entry['references'] else []
+        # Parse stored data (jsonb columns return objects directly, not strings)
+        chunks = cache_entry['chunks'] if cache_entry['chunks'] else []
+        entities = cache_entry['entities'] if cache_entry['entities'] else []
+        communities = cache_entry['communities'] if cache_entry['communities'] else []
+        references = cache_entry['references'] if cache_entry['references'] else []
         
         # Fetch full chunk data for each chunk ID
         formatted_chunks = []
@@ -81,11 +81,16 @@ class MemoryService:
                         
                         chunk = cursor.fetchone()
                         if chunk:
+                            # Handle source_metadata (jsonb column returns dict, not string)
+                            if isinstance(chunk["source_metadata"], str):
+                                metadata = json.loads(chunk["source_metadata"])
+                            else:
+                                metadata = chunk["source_metadata"]
+                            
                             formatted_chunks.append({
                                 "id": chunk["id"],
                                 "text": chunk["text_content"],
-                                "source": json.loads(chunk["source_metadata"])["source"] if isinstance(chunk["source_metadata"], str) 
-                                         else chunk["source_metadata"]["source"],
+                                "source": metadata.get("source", "Unknown source"),
                                 "similarity": 1.0  # Set to 1.0 for remembered results
                             })
         
