@@ -251,7 +251,11 @@ class ThreadService:
                 
                 # Extract references
                 for chunk in retrieved_chunks:
-                    metadata = json.loads(chunk['source_metadata']) if isinstance(chunk['source_metadata'], str) else chunk['source_metadata']
+                    # Handle source_metadata (jsonb column returns dict, not string)
+                    if isinstance(chunk['source_metadata'], str):
+                        metadata = json.loads(chunk['source_metadata'])
+                    else:
+                        metadata = chunk['source_metadata']
                     source = metadata.get('source', 'Unknown source')
                     if source not in references:
                         references.append(source)
@@ -265,8 +269,8 @@ class ThreadService:
                     {
                         "id": chunk["id"],
                         "text": chunk["text_content"],
-                        "source": json.loads(chunk["source_metadata"])["source"] if isinstance(chunk["source_metadata"], str) 
-                                 else chunk["source_metadata"]["source"],
+                        "source": (json.loads(chunk["source_metadata"]) if isinstance(chunk["source_metadata"], str) 
+                                 else chunk["source_metadata"]).get("source", "Unknown source"),
                         "similarity": float(chunk["similarity"])
                     } for chunk in retrieved_chunks
                 ]
