@@ -119,6 +119,29 @@ class QueryService:
         answer = response.choices[0].message.content.strip()
         return answer, references
     
+    def generate_simple_answer(self, query: str, context: str) -> str:
+        """Generate a simple answer without advanced features."""
+        prompt = f"""
+        Answer the following question based on the provided context. Keep your answer concise and factual.
+        
+        Context: {context}
+        
+        Question: {query}
+        
+        Answer:"""
+        
+        response = self.client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that answers questions based on provided context."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.3
+        )
+        
+        return response.choices[0].message.content.strip()
+    
     async def process_query(self, query: str, max_results: int = 5, use_memory: bool = True) -> Dict[str, Any]:
         """Process a user query with optional memory lookup."""
         # Create query embedding

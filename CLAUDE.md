@@ -89,6 +89,16 @@ cd frontend
 npm install
 npm run dev
 
+# Test QA system
+python test_enhanced_qa_system.py  # Run full test suite
+python run_enhanced_qa_tests.py security  # Run specific test
+
+# Query the system
+curl -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"query": "Your question here", "use_amplification": true}'
+
+# Simple queries (faster, legacy endpoint)
+curl -X POST http://localhost:8000/query/simple -H "Content-Type: application/json" -d '{"query": "Your question here"}'
+
 # Backup the database
 ./scripts/backup_db.sh [optional_backup_directory]
 
