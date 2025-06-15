@@ -3,6 +3,7 @@ Query Routes with advanced prompting strategies
 """
 import json
 import time
+import asyncio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -169,14 +170,18 @@ async def classify_chunks(query: str, chunk_ids: List[int]):
         
         # Classify each chunk
         classifications = []
-        for chunk in chunks:
+        # Use asyncio to parallelize chunk classification
+        async def classify_chunk(chunk):
             relevance_score = await qa_service.classify_chunk_relevance(chunk, query)
-            classifications.append({
+            return {
                 "chunk_id": chunk["id"],
                 "relevance_score": relevance_score,
                 "is_relevant": relevance_score > 0.5,
                 "text_preview": chunk["text_content"][:200] + "..." if len(chunk["text_content"]) > 200 else chunk["text_content"]
-            })
+            }
+        
+        # Process all chunks in parallel
+        classifications = await asyncio.gather(*[classify_chunk(chunk) for chunk in chunks])
         
         return {
             "query": query,
