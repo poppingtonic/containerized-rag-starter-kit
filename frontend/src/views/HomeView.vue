@@ -2,6 +2,7 @@
   <div class="home-view">
     <div class="query-section">
       <h1>AI Search</h1>
+      <IngestionProgress />
       <p class="subtitle">Query your documents with AI-powered search and knowledge graph enhancement</p>
       
       <form @submit.prevent="submitQuery" class="query-form">
@@ -17,8 +18,6 @@
         </button>
       </form>
     </div>
-
-    <IngestionProgress />
 
     <div v-if="error" class="error-message">
       {{ error }}
