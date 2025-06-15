@@ -1,0 +1,19 @@
+[
+  {
+    "test_name": "Simple vs Advanced Comparison",
+    "status": "PASS",
+    "duration": 0.893989086151123,
+    "timestamp": 1750008619.3616052,
+    "details": {
+      "simple_duration": 0.97934889793396,
+      "advanced_duration": 0.893989086151123,
+      "simple_from_memory": true,
+      "advanced_subquestions": 0,
+      "advanced_verification": null,
+      "answer_length_comparison": {
+        "simple": 1544,
+        "advanced": 1544
+      }
+    }
+  }
+]

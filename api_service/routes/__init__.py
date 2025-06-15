@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from .query_routes import router as query_router
+from .legacy_routes import router as legacy_router
 from .memory_routes import router as memory_router
 from .feedback_routes import router as feedback_router
 from .thread_routes import router as thread_router
@@ -13,6 +14,7 @@ main_router = APIRouter()
 
 # Include all sub-routers
 main_router.include_router(query_router, tags=["Query"])
+main_router.include_router(legacy_router, tags=["Legacy"])
 main_router.include_router(memory_router, prefix="/memory", tags=["Memory"])
 main_router.include_router(feedback_router, tags=["Feedback"])
 main_router.include_router(thread_router, prefix="/thread", tags=["Threads"])
