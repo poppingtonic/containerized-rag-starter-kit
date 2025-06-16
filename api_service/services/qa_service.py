@@ -179,14 +179,39 @@ Answer:""".strip()
             print(f"Error answering subquestion: {e}")
             return "Unable to answer based on available context."
     
-    async def verify_answer(self, question: str, answer: str, context: str) -> float:
+    async def verify_answer(self, question: str, answer: str, context: str, use_haiku: bool = False) -> float:
         """
         Verify if an answer is supported by the context.
         Returns probability that answer is correct.
+        Optionally uses Claude Haiku for verification.
         """
         try:
             prompt = self.make_verification_prompt(question, answer, context)
             
+            if use_haiku and hasattr(Config, 'ANTHROPIC_API_KEY') and Config.ANTHROPIC_API_KEY:
+                # Use Claude Haiku for verification
+                try:
+                    import anthropic
+                    client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+                    
+                    response = client.messages.create(
+                        model="claude-3-haiku-20240307",
+                        max_tokens=10,
+                        temperature=0.1,
+                        messages=[
+                            {"role": "user", "content": prompt}
+                        ]
+                    )
+                    
+                    answer_text = response.content[0].text.strip().lower()
+                    return 0.9 if "yes" in answer_text else 0.1
+                    
+                except ImportError:
+                    print("Anthropic library not installed, falling back to OpenAI")
+                except Exception as e:
+                    print(f"Error with Claude Haiku verification: {e}, falling back to OpenAI")
+            
+            # Fallback to OpenAI
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
@@ -208,7 +233,8 @@ Answer:""".strip()
         self, 
         question: str, 
         chunks: List[Dict], 
-        use_amplification: bool = True
+        use_amplification: bool = False,
+        use_haiku_verification: bool = False
     ) -> Tuple[str, List[Dict], float]:
         """
         Generate an answer using subquestion amplification.
@@ -226,13 +252,16 @@ Answer:""".strip()
             subquestions = await self.generate_subquestions(question, context)
             
             # Answer each subquestion
-            for subq in subquestions:
+            # Process all subquestions in parallel
+            async def process_subquestion(subq):
                 subanswer = await self.answer_subquestion(subq, context)
-                subquestions_data.append({
-                    "question": subq,
-                    "answer": subanswer
-                })
-        
+                return {"question": subq, "answer": subanswer}
+            
+            # Use asyncio.gather to run all subquestion processing concurrently
+            if subquestions:
+                subquestions_data = await asyncio.gather(*[process_subquestion(subq) for subq in subquestions])
+            else:
+                subquestions_data = []
         # Generate final answer
         prompt = self.make_enhanced_qa_prompt(context, question, subquestions_data)
         
@@ -249,7 +278,7 @@ Answer:""".strip()
         answer = response.choices[0].message.content.strip()
         
         # Verify answer quality
-        verification_score = await self.verify_answer(question, answer, context)
+        verification_score = await self.verify_answer(question, answer, context, use_haiku_verification)
         
         return answer, subquestions_data, verification_score
     
