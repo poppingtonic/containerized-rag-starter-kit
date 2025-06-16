@@ -26,6 +26,7 @@ class Query(BaseModel):
     use_memory: bool = True
     use_amplification: bool = True
     use_smart_selection: bool = True
+    use_haiku_verification: bool = False
 
 class SubQuestionResponse(BaseModel):
     question: str
@@ -85,7 +86,8 @@ async def process_query(query_data: Query):
         answer, subquestions_data, verification_score = await qa_service.answer_generation(
             query_data.query, 
             selected_chunks, 
-            use_amplification=query_data.use_amplification
+            use_amplification=query_data.use_amplification,
+            use_haiku_verification=query_data.use_haiku_verification
         )
         
         # Extract references from chunks
@@ -219,9 +221,10 @@ async def generate_subquestions_endpoint(query: str, context: Optional[str] = No
         raise HTTPException(status_code=500, detail=f"Subquestion generation failed: {str(e)}")
 
 @router.post("/query/verify-answer")
-async def verify_answer_endpoint(query: str, answer: str, context: Optional[str] = None):
+async def verify_answer_endpoint(query: str, answer: str, context: Optional[str] = None, use_haiku: bool = False):
     """
     Verify if an answer is supported by the provided context.
+    Optionally use Claude Haiku for verification.
     """
     try:
         if not context:
@@ -230,7 +233,7 @@ async def verify_answer_endpoint(query: str, answer: str, context: Optional[str]
             chunks = query_service.vector_search(query_embedding, 5)
             context = "\n\n".join([chunk['text_content'] for chunk in chunks])
         
-        verification_score = await qa_service.verify_answer(query, answer, context)
+        verification_score = await qa_service.verify_answer(query, answer, context, use_haiku)
         
         return {
             "query": query,
