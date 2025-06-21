@@ -4,7 +4,7 @@ from routes import main_router
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="GraphRAG API", 
+    title="Consilience API", 
     description="API for querying documents with GraphRAG-enhanced retrieval",
     version="2.0.0"
 )
@@ -23,7 +23,7 @@ app.include_router(main_router)
 
 @app.get("/")
 async def root():
-    return {"message": "GraphRAG API is running"}
+    return {"message": "Consilience API is running"}
 
 if __name__ == "__main__":
     import uvicorn
