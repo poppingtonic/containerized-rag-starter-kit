@@ -83,6 +83,25 @@ services:
     volumes:
       - grobid_data:/opt/grobid
 
+  mcp-server:
+    build:
+      context: .
+      dockerfile: ./mcp_server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://graphraguser:graphragpassword@db:5432/graphragdb
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      INGESTION_SERVICE_URL: http://ingestion-service:5050
+      PYTHONPATH: /app
+    volumes:
+      - graphrag_outputs:/app/graph_data
+    depends_on:
+      - db
+      - api-service
+      - ingestion-service
+    stdin_open: true
+    tty: true
+    command: ["/app/mcp_server/run_mcp_server.sh"]
+
 volumes:
   pg_data:
   graphrag_outputs:

@@ -3,7 +3,7 @@
     <nav class="navbar">
       <div class="nav-container">
         <router-link to="/" class="nav-brand">
-          <h1>AI Search</h1>
+          <h1>Consilience</h1>
         </router-link>
         
         <div class="nav-links">

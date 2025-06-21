@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Search is a containerized application that generates paragraph answers with references based on user queries, powered by GraphRAG technology. The system processes documents, builds a knowledge graph of entities and their relationships, and provides comprehensive answers with citations.
+Consilience is a containerized application that generates paragraph answers with references based on user queries, powered by GraphRAG technology. The system processes documents, builds a knowledge graph of entities and their relationships, and provides comprehensive answers with citations.
 
 ## Common Commands
 
@@ -49,6 +49,9 @@ python ./scripts/import_with_metadata.py /home/mu/Zotero/storage
 
 # Import with OCR support (for scanned documents)
 python ./scripts/import_with_ocr.py /home/mu/Zotero/storage
+
+# Process a specific file
+curl -X POST http://localhost:8000/process-file -H "Content-Type: application/json" -d '{"file_path": "/app/data/document.pdf"}'
 
 # Restart a specific service (useful after code changes)
 ./scripts/restart_service.sh graphrag-processor --build
@@ -107,11 +110,15 @@ curl -X POST http://localhost:8000/query/simple -H "Content-Type: application/js
 
 # Set up scheduled backups with retention
 ./scripts/scheduled_backup.sh [backup_directory] [retention_count]
+
+# MCP Server operations
+# Connect to MCP server for programmatic access
+docker compose exec -T mcp-server python /app/mcp_server/server.py
 ```
 
 ## Architecture
 
-The application consists of five containerized services:
+The application consists of seven containerized services:
 
 1. **db** - PostgreSQL with pgvector
    - Stores document chunks in `document_chunks` table
@@ -127,6 +134,7 @@ The application consists of five containerized services:
    - Stores chunks and embeddings in the database
    - Processes PDF, DOCX, TXT files
    - Handles OCR for scanned documents and images
+   - Exposes `/process-file` endpoint for single file processing
 
 3. **graphrag-processor**
    - Builds a knowledge graph from document chunks
@@ -155,6 +163,18 @@ The application consists of five containerized services:
    - Allows users to provide feedback and favorite queries
    - Supports creating conversation threads from interesting queries
    - Provides dialog capability with optional retrieval enhancement
+
+6. **ocr-service**
+   - Dedicated OCR processing service
+   - Handles scanned PDFs and images
+   - Converts documents to searchable PDFs
+   - Works with the ingestion service
+
+7. **mcp-server**
+   - Model Context Protocol server
+   - Exposes Consilience functionality via MCP
+   - Provides programmatic access to query and ingestion
+   - Integrates with Claude Desktop and other MCP clients
 
 6. **ocr-service**
    - Dedicated OCR processing service
@@ -191,6 +211,7 @@ The application consists of five containerized services:
 - Feedback and favorites functionality
 - Thread management and dialog capability
 - Health and status endpoints
+- `/process-file` endpoint for single file processing
 
 ### Database Schema
 - `document_chunks` table - Stores text chunks and metadata
@@ -236,6 +257,7 @@ Important ports:
 - Ingestion Service: 5050
 - PostgreSQL: 5433 (exposed to host, 5432 internally)
 - OCR Service: 1337
+- MCP Server: stdio (runs within container)
 
 These can be set in a `.env` file at the project root. See `env.example` for a template.
 

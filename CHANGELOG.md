@@ -1,9 +1,55 @@
 # Changelog
 
-All notable changes to the WriteHere GraphRAG project will be documented in this file.
+All notable changes to the doc-mcp project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased] - 2025-06-21
+
+### Added
+- **MCP Server Component**: New Model Context Protocol server for programmatic access
+  - Exposes all query and ingestion capabilities via MCP protocol
+  - Integrates with Claude Desktop and other MCP clients
+  - Provides 9 tools: query_documents, simple_query, trigger_ingestion, process_file, etc.
+  - Full Docker integration with health checks and startup scripts
+  - Comprehensive documentation in mcp_server/README.md
+
+- **Single File Processing**: New endpoint for processing individual documents
+  - `POST /process-file` endpoint in API service
+  - Routes to ingestion service for immediate file processing
+  - Accessible via REST API and MCP protocol
+  - Supports forced reprocessing of existing files
+
+### Changed
+- **Service Rebranding**: Renamed from "WriteHere GraphRAG" to "Consilience"
+  - Updated all API titles and descriptions
+  - Changed frontend branding (UI, page title, package name)
+  - Updated all documentation to reflect new name
+  - Renamed MCP server class to ConsilienceMCPServer
+
+- **Endpoint Standardization**: Renamed ingestion endpoints for consistency
+  - `/force-process` → `/process-file` (more descriptive naming)
+  - Updated all references in code and documentation
+  - Maintained backward compatibility in ingestion service
+
+- **Documentation Updates**: Comprehensive updates to reflect changes
+  - CLAUDE.md now includes MCP server usage and new endpoints
+  - README.md updated with Consilience branding
+  - Added 7th service (mcp-server) to architecture documentation
+  - Updated example commands with new endpoints
+
+### Fixed
+- **MCP Dependencies**: Resolved requirements.txt issues
+  - Added all necessary dependencies to MCP requirements.txt
+  - Removed duplicate installation from api_service
+  - Fixed potential hash mismatch errors in Docker builds
+
+### Technical Details
+- MCP server reuses existing service implementations for consistency
+- Docker build updated with proper dependency management
+- Service count increased from 5 to 7 (added ocr-service and mcp-server)
+- All endpoints maintain existing functionality with improved naming
 
 ## [Latest] - 2025-06-15
 

@@ -1,12 +1,12 @@
-# Starter PGVector/GraphRAG Query System
+# Consilience - Document Query System with GraphRAG
 
-A containerized application that generates paragraph answers with references based on user queries, powered by PGVector technology.
+A containerized application that generates paragraph answers with references based on user queries, powered by GraphRAG and PGVector technology.
 
 ## Overview
 ![Real-time Document Ingestion](https://github.com/user-attachments/assets/430d6c1a-0248-4c9e-9db0-33dcf811fbf7)
 ![Answer 1 (one) Question (no cache)](https://github.com/user-attachments/assets/8967cc37-977f-42f9-98f7-b0a51bc5105b)
 
-This project implements a full-stack RAG (Retrieval-Augmented Generation) system enhanced with graph-based knowledge representation. The system processes documents, builds a knowledge graph of entities and their relationships, and provides comprehensive answers to user queries with proper citations.
+Consilience implements a full-stack RAG (Retrieval-Augmented Generation) system enhanced with graph-based knowledge representation. The system processes documents, builds a knowledge graph of entities and their relationships, and provides comprehensive answers to user queries with proper citations.
 
 ### Key Features
 
@@ -36,7 +36,7 @@ The application is fully containerized using Docker and consists of the followin
 
 ### 3. GraphRAG Processor
 - Builds a knowledge graph from document chunks
-- Extracts entities and relationships (fixed)
+- Extracts entities and relationships
 - Generates community summaries
 - Outputs graph data for enhanced retrieval
 
@@ -47,6 +47,7 @@ The application is fully containerized using Docker and consists of the followin
 - Generates comprehensive answers
 - Caches results for similar future queries
 - Supports conversation threads and feedback
+- Provides `/process-file` endpoint for single file processing
 
 ### 5. Frontend
 - Provides a user-friendly interface

@@ -61,9 +61,9 @@ def create_api(processing_queue):
         
         return jsonify(status)
     
-    @app.route('/force-process', methods=['POST'])
-    def force_process():
-        """Force processing of a specific file even if already processed."""
+    @app.route('/process-file', methods=['POST'])
+    def process_file():
+        """Process a specific file even if already processed."""
         data = request.json
         if not data or not data.get("file_path"):
             return jsonify({"status": "error", "message": "No file_path provided"}), 400
@@ -80,7 +80,7 @@ def create_api(processing_queue):
         
         return jsonify({
             "status": "success",
-            "message": f"File {file_path} queued for forced processing",
+            "message": f"File {file_path} queued for processing",
             "timestamp": datetime.now().isoformat()
         })
     
