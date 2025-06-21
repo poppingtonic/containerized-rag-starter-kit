@@ -2,11 +2,22 @@
 .env
 data
 error.txt
-<<<<<<< HEAD
 
 .DS_Store
 node_modules
 yarn.lock
-=======
 *.pyc
->>>>>>> a4b87d4 (Update docs)
+data_ilri
+data_personal
+*roadmap.txt
+*.json.backup
+*.tar.xz
+*.tar.zst
+*.pdf
+*.png
+*.jpg
+*.docx
+*.doc
+*.zip
+*.epub
+*.mobi
