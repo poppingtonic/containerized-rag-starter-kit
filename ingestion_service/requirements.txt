@@ -2,7 +2,8 @@ psycopg2-binary==2.9.10
 openai==1.77.0
 python-dotenv==1.0.0
 llama-index==0.12.35
-langchain==0.3.25
+langchain==0.3.26
+langchain-community==0.3.26
 python-docx==1.1.2
 pypdf==5.6.0
 watchdog==6.0.0
@@ -16,5 +17,5 @@ lxml==5.4.0
 spacy==3.8.7
 beautifulsoup4==4.13.4
 pydantic==2.11.5
-grobid-client-python==0.0.9
+grobid-client-python==0.0.11
 haystack-ai==2.14.2

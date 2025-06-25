@@ -11,7 +11,7 @@ import jsonlines
 from datetime import datetime
 from collections import defaultdict
 from sentence_transformers import SentenceTransformer, util
-from stanford_openie import StanfordOpenIE
+from openie import StanfordOpenIE
 import torch
 
 # Configuration from environment variables
@@ -19,17 +19,32 @@ DB_URL = os.environ.get("DATABASE_URL")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/app/outputs")
 PROCESSING_INTERVAL = int(os.environ.get("PROCESSING_INTERVAL", "3600"))  # Default: 1 hour
+CORENLP_HOME = os.environ.get("CORENLP_HOME")
 
 # Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Initialize Stanza pipeline with all required processors
 print("Initializing Stanza pipeline...")
+print(f"CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+    print(f"CUDA memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+
 stanza.download('en', verbose=False)  # Download models if not present
 nlp = stanza.Pipeline('en', processors='tokenize,mwt,pos,lemma,ner,depparse,coref', verbose=False, use_gpu=torch.cuda.is_available())
 
 # Initialize sentence transformer for entity linking
-entity_linker_model = SentenceTransformer('all-MiniLM-L6-v2')
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"Initializing sentence transformer on device: {device}")
+try:
+    entity_linker_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+    print(f"Sentence transformer loaded successfully")
+except Exception as e:
+    print(f"Warning: Failed to load sentence transformer: {e}")
+    print("Downloading model...")
+    entity_linker_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device=device)
+    print(f"Sentence transformer loaded after download")
 
 # Initialize Stanford OpenIE for relation extraction
 openie_client = None
@@ -435,60 +450,83 @@ def generate_entity_summaries(G, chunks_data):
     
     return summaries
 
-# Save graph and summaries
+# Save graph and summaries to database
 def save_outputs(G, summaries):
     """
-    Save the knowledge graph and community summaries.
+    Save the knowledge graph and community summaries to database.
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now()
     
-    # Create output directory
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            # Clear old data if needed (optional - you might want to keep history)
+            # cursor.execute("DELETE FROM graph_nodes WHERE processing_timestamp < NOW() - INTERVAL '30 days'")
+            # cursor.execute("DELETE FROM graph_edges WHERE processing_timestamp < NOW() - INTERVAL '30 days'")
+            # cursor.execute("DELETE FROM community_summaries WHERE processing_timestamp < NOW() - INTERVAL '30 days'")
+            
+            # Insert nodes
+            node_count = 0
+            for node, attrs in G.nodes(data=True):
+                node_type = attrs.get("type", "")
+                entity_type = attrs.get("entity_type", None)
+                text = attrs.get("text", "")
+                source = attrs.get("source", None)
+                
+                cursor.execute("""
+                    INSERT INTO graph_nodes (node_id, node_type, entity_type, text, source, processing_timestamp)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (node_id, processing_timestamp) DO NOTHING
+                """, (node, node_type, entity_type, text, source, timestamp))
+                node_count += 1
+            
+            # Insert edges
+            edge_count = 0
+            for source, target, data in G.edges(data=True):
+                source_type = G.nodes[source].get("type", "")
+                target_type = G.nodes[target].get("type", "")
+                relation = data.get('relation', None)
+                weight = data.get('weight', 1.0)
+                
+                cursor.execute("""
+                    INSERT INTO graph_edges (source_node, target_node, weight, relation, source_type, target_type, processing_timestamp)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (source, target, weight, relation, source_type, target_type, timestamp))
+                edge_count += 1
+            
+            # Insert summaries
+            summary_count = 0
+            for summary in summaries:
+                cursor.execute("""
+                    INSERT INTO community_summaries (community_id, summary, entities, key_relations, num_entities, num_chunks, processing_timestamp)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    summary["community_id"],
+                    summary["summary"],
+                    json.dumps(summary["entities"]),
+                    json.dumps(summary.get("key_relations", [])),
+                    summary["num_entities"],
+                    summary["num_chunks"],
+                    timestamp
+                ))
+                summary_count += 1
+            
+            conn.commit()
+    
+    # Still save a reference file for backward compatibility (optional)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    
-    # Save graph as edge list with relation information
-    edges_file = os.path.join(OUTPUT_DIR, f"graph_edges_{timestamp}.csv")
-    with open(edges_file, 'w') as f:
-        f.write("source,target,weight,relation,source_type,target_type\n")
-        for source, target, data in G.edges(data=True):
-            source_type = G.nodes[source]["type"]
-            target_type = G.nodes[target]["type"]
-            relation = data.get('relation', '')
-            weight = data.get('weight', 1)
-            f.write(f"{source},{target},{weight},{relation},{source_type},{target_type}\n")
-    
-    # Save node attributes
-    nodes_file = os.path.join(OUTPUT_DIR, f"graph_nodes_{timestamp}.csv")
-    with open(nodes_file, 'w') as f:
-        f.write("id,type,entity_type,text,source\n")
-        for node, attrs in G.nodes(data=True):
-            node_type = attrs.get("type", "")
-            entity_type = attrs.get("entity_type", "")
-            text = attrs.get("text", "").replace(",", " ").replace("\n", " ")
-            source = attrs.get("source", "")
-            f.write(f"{node},{node_type},{entity_type},{text},{source}\n")
-    
-    # Save summaries with extended information
-    summaries_file = os.path.join(OUTPUT_DIR, f"summaries_{timestamp}.jsonl")
-    with jsonlines.open(summaries_file, mode='w') as writer:
-        for summary in summaries:
-            writer.write(summary)
-    
-    # Save latest reference file for the API service
     latest_refs = {
-        "edges": edges_file,
-        "nodes": nodes_file,
-        "summaries": summaries_file,
-        "timestamp": timestamp,
-        "num_nodes": len(G.nodes()),
-        "num_edges": len(G.edges()),
-        "num_communities": len(summaries)
+        "timestamp": timestamp.strftime("%Y%m%d_%H%M%S"),
+        "num_nodes": node_count,
+        "num_edges": edge_count,
+        "num_communities": summary_count,
+        "database": "PostgreSQL"
     }
     
     with open(os.path.join(OUTPUT_DIR, "latest_refs.json"), 'w') as f:
         json.dump(latest_refs, f, indent=2)
     
-    print(f"Saved graph with {len(G.nodes())} nodes and {len(G.edges())} edges")
-    print(f"Generated {len(summaries)} community summaries")
+    print(f"Saved graph with {node_count} nodes and {edge_count} edges to database")
+    print(f"Generated {summary_count} community summaries")
 
 # Main processing function
 def process_graph():

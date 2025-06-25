@@ -14,37 +14,43 @@ from typing import Optional, List, Dict, Tuple, Any
 import hashlib
 from datetime import datetime
 
+# try:
+import lxml
+import spacy
+from bs4 import BeautifulSoup
+from pydantic import BaseModel, Field
+from grobid_client.grobid_client import GrobidClient
+from collections.abc import Iterator
+from typing import Annotated, Literal
+    
+# Try new import path first, then fallback
 try:
-    import lxml
-    import spacy
-    from bs4 import BeautifulSoup
-    from pydantic import BaseModel, Field
-    from grobid_client.grobid_client import GrobidClient
-    from collections.abc import Iterator
-    from typing import Annotated, Literal
+    from langchain_community.embeddings import OpenAIEmbeddings
+except ImportError:
+    from langchain.embeddings.openai import OpenAIEmbeddings
     
-    # Try new import path first, then fallback
-    try:
-        from langchain_community.embeddings import OpenAIEmbeddings
-    except ImportError:
-        from langchain.embeddings.openai import OpenAIEmbeddings
-    
-    try:
-        from haystack.nodes import TextConverter, PreProcessor
-    except ImportError:
-        # Haystack not available, will handle in functions
-        TextConverter = None
-        PreProcessor = None
-    
-    ACADEMIC_DEPENDENCIES_AVAILABLE = True
-    
-except ImportError as e:
-    print(f"Academic processing dependencies not available: {e}")
-    ACADEMIC_DEPENDENCIES_AVAILABLE = False
-    # Define minimal classes for basic functionality
-    OpenAIEmbeddings = None
-    TextConverter = None
-    PreProcessor = None
+# try:
+from haystack.components.converters import TextFileToDocument
+from haystack.components.preprocessors import DocumentCleaner, DocumentSplitter
+from haystack import Document
+# except ImportError:
+#     # Haystack not available, will handle in functions
+#     TextFileToDocument = None
+#     DocumentCleaner = None
+#     DocumentSplitter = None
+#     Document = None
+
+ACADEMIC_DEPENDENCIES_AVAILABLE = True
+
+# except ImportError as e:
+#     print(f"Academic processing dependencies not available: {e}")
+#     ACADEMIC_DEPENDENCIES_AVAILABLE = False
+#     # Define minimal classes for basic functionality
+#     OpenAIEmbeddings = None
+#     TextFileToDocument = None
+#     DocumentCleaner = None
+#     DocumentSplitter = None
+#     Document = None
 
 from config import OPENAI_API_KEY
 
@@ -60,8 +66,8 @@ if ACADEMIC_DEPENDENCIES_AVAILABLE:
             print("Warning: No spaCy model found. Academic processing may be limited.")
             nlp = None
     
-    if TextConverter:
-        txt_converter = TextConverter(valid_languages=["en"])
+    if TextFileToDocument:
+        txt_converter = TextFileToDocument()
     else:
         txt_converter = None
 else:
@@ -168,8 +174,14 @@ def save_pdf_text(paper_body: List[Dict], file_name: str):
 def process_with_grobid(file_path: Path) -> Tuple[Optional[str], List[str]]:
     """Process PDF with GROBID for structured academic parsing."""
     try:
+        # Check if running in Docker (by checking if /app exists)
+        if os.path.exists('/app'):
+            config_path = "./grobid_config_docker.json"
+        else:
+            config_path = "./grobid_config.json"
+            
         # Initialize GROBID client
-        client = GrobidClient(config_path="./grobid_config.json")
+        client = GrobidClient(config_path=config_path)
         
         # Process with GROBID
         _, status, text = client.process_pdf(
@@ -200,7 +212,7 @@ def process_with_fallback_api(file_path: Path) -> List[str]:
     """Fallback processing using external API or standard processors."""
     try:
         # Import here to avoid circular imports
-        from .file_processors import process_file
+        from file_processors import process_file
         
         # Use the standard file processors as fallback
         content, _, _ = process_file(str(file_path))
@@ -215,22 +227,51 @@ def process_with_fallback_api(file_path: Path) -> List[str]:
 
 
 def process_txt_with_preprocessing(file_path: Path) -> List[str]:
-    """Process text files with Haystack preprocessing."""
+    """Process text files with Haystack 2.x preprocessing."""
     try:
-        doc_txt = txt_converter.convert(file_path=str(file_path), meta=None)[0]
-        preprocessor = PreProcessor(
-            clean_empty_lines=True,
-            clean_whitespace=True,
-            clean_header_footer=False,
+        if not txt_converter or not DocumentCleaner or not DocumentSplitter:
+            # Fallback if Haystack not available
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # Simple paragraph splitting
+            return [p.strip() for p in content.split('\n\n') if p.strip()]
+        
+        # Convert file to document
+        result = txt_converter.run(sources=[str(file_path)])
+        documents = result.get('documents', [])
+        
+        if not documents:
+            return []
+        
+        # Clean documents
+        cleaner = DocumentCleaner(
+            remove_empty_lines=True,
+            remove_extra_whitespaces=True,
+            remove_repeated_substrings=False
+        )
+        cleaned_result = cleaner.run(documents=documents)
+        cleaned_docs = cleaned_result.get('documents', documents)
+        
+        # Split documents
+        splitter = DocumentSplitter(
             split_by="word",
             split_length=100,
-            split_respect_sentence_boundary=True
+            split_overlap=0,
+            split_threshold=0
         )
-        docs = preprocessor.process([doc_txt])
-        return [doc.content for doc in docs]
+        split_result = splitter.run(documents=cleaned_docs)
+        split_docs = split_result.get('documents', [])
+        
+        return [doc.content for doc in split_docs if doc.content]
     except Exception as e:
         print(f"Text preprocessing failed: {e}")
-        return []
+        # Fallback to simple file reading
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return [p.strip() for p in content.split('\n\n') if p.strip()]
+        except:
+            return []
 
 
 def parse_embed_file(file_path: Path) -> List[Dict[str, Any]]:

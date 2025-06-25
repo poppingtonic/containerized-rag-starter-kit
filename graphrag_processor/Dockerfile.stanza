@@ -12,8 +12,14 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements
 COPY requirements_stanza.txt .
 
-# Install Python dependencies
+# Install PyTorch first (CPU version by default, will work on both CPU and GPU)
+RUN pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+
+# Install other Python dependencies
 RUN pip install --no-cache-dir -r requirements_stanza.txt
+
+# Install spaCy model
+RUN python -m spacy download en_core_web_sm
 
 # Download Stanford CoreNLP for OpenIE (required by stanford-openie)
 RUN cd /tmp && \

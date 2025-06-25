@@ -116,6 +116,39 @@ curl -X POST http://localhost:8000/query/simple -H "Content-Type: application/js
 docker compose exec -T mcp-server python /app/mcp_server/server.py
 ```
 
+## Deployment Options
+
+The GraphRAG processor supports multiple deployment configurations:
+
+1. **GPU-Accelerated (Recommended)** - Uses NVIDIA CUDA for fastest processing
+
+   ```bash
+   ./deploy_gpu.sh
+   # or
+   docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d
+   # or
+   docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d --build graphrag-processor
+   ```
+   test if nvidia is working
+   ```bash
+   docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+   ```
+
+2. **CPU with OpenIE** - Good quality without GPU requirement
+
+   ```bash
+   ./deploy_cpu_openie.sh
+   # or
+   docker compose -f docker-compose.yml -f docker-compose.cpu_openie.yml up -d
+   ```
+
+3. **Minimal CPU** - Lowest resource usage
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+   ```
+
+See `graphrag_processor/DEPLOYMENT_GUIDE.md` for detailed deployment instructions.
+
 ## Architecture
 
 The application consists of seven containerized services:
@@ -304,3 +337,7 @@ To customize conversation threads:
 1. Modify the `generate_thread_message` function in `api_service/app.py`
 2. Adjust the thread creation and message handling logic
 3. Change the retrieval enhancement parameters
+
+## Session Save Log
+
+- **Added Memory Entry**: Saved this session's details in CLAUDE.md memory log
