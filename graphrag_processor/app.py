@@ -13,12 +13,16 @@ from collections import defaultdict
 from sentence_transformers import SentenceTransformer, util
 from stanford_openie import StanfordOpenIE
 import torch
+import gc
+from psycopg2.extras import RealDictCursor
 
 # Configuration from environment variables
 DB_URL = os.environ.get("DATABASE_URL")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/app/outputs")
 PROCESSING_INTERVAL = int(os.environ.get("PROCESSING_INTERVAL", "3600"))  # Default: 1 hour
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "100"))  # Process chunks in batches
+MAX_TEXT_LENGTH = int(os.environ.get("MAX_TEXT_LENGTH", "5000"))  # Limit text length for processing
 
 # Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -38,8 +42,15 @@ openie_client = None
 def get_db_connection():
     return psycopg2.connect(DB_URL)
 
-# Fetch chunks and embeddings from database
-def fetch_data():
+# Get total number of chunks
+def get_chunk_count():
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM document_chunks")
+            return cursor.fetchone()[0]
+
+# Fetch chunks in batches
+def fetch_data_batch(offset, limit):
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -52,9 +63,10 @@ def fetch_data():
                     document_chunks dc
                 JOIN 
                     chunk_embeddings ce ON dc.id = ce.chunk_id
-            """)
+                ORDER BY dc.id
+                LIMIT %s OFFSET %s
+            """, (limit, offset))
             
-            # Return list of (id, text, metadata, embedding)
             return cursor.fetchall()
 
 # Process text with Stanza for NER and coreference resolution
@@ -64,73 +76,77 @@ def process_text_with_stanza(text):
     Returns processed text and entity dictionary.
     """
     # Limit text length to avoid memory issues
-    if len(text) > 10000:
-        text = text[:10000]
+    if len(text) > MAX_TEXT_LENGTH:
+        text = text[:MAX_TEXT_LENGTH]
     
-    # Process with Stanza
-    doc = nlp(text)
-    
-    # Extract entities
-    entities = defaultdict(list)
-    for sent in doc.sentences:
-        for ent in sent.ents:
-            entity_type = ent.type
-            entity_text = ent.text.strip()
-            
-            # Skip very short entities or those with non-alphanumeric characters only
-            if len(entity_text) < 2 or not any(c.isalnum() for c in entity_text):
-                continue
-                
-            if entity_text not in entities[entity_type]:
-                entities[entity_type].append(entity_text)
-    
-    # Process coreferences and create resolved text
-    resolved_text = text
-    if hasattr(doc, 'coref_chains') and doc.coref_chains:
-        # Build a mapping of mention spans to their representative mention
-        replacements = []
+    try:
+        # Process with Stanza
+        doc = nlp(text)
         
-        for chain in doc.coref_chains:
-            if len(chain) < 2:
-                continue
+        # Extract entities
+        entities = defaultdict(list)
+        for sent in doc.sentences:
+            for ent in sent.ents:
+                entity_type = ent.type
+                entity_text = ent.text.strip()
                 
-            # Find the representative mention (prefer named entities)
-            representative = None
-            for mention in chain:
-                mention_text = mention.text
-                # Check if this mention is a named entity
-                for entity_type, entity_list in entities.items():
-                    if mention_text in entity_list:
-                        representative = mention_text
+                # Skip very short entities or those with non-alphanumeric characters only
+                if len(entity_text) < 2 or not any(c.isalnum() for c in entity_text):
+                    continue
+                    
+                if entity_text not in entities[entity_type]:
+                    entities[entity_type].append(entity_text)
+        
+        # Process coreferences and create resolved text
+        resolved_text = text
+        if hasattr(doc, 'coref_chains') and doc.coref_chains:
+            # Build a mapping of mention spans to their representative mention
+            replacements = []
+            
+            for chain in doc.coref_chains:
+                if len(chain) < 2:
+                    continue
+                    
+                # Find the representative mention (prefer named entities)
+                representative = None
+                for mention in chain:
+                    mention_text = mention.text
+                    # Check if this mention is a named entity
+                    for entity_type, entity_list in entities.items():
+                        if mention_text in entity_list:
+                            representative = mention_text
+                            break
+                    if representative:
                         break
-                if representative:
-                    break
+                
+                # If no named entity found, use the first mention
+                if not representative:
+                    representative = chain[0].text
+                
+                # Create replacements for all mentions except the representative
+                for mention in chain:
+                    if mention.text != representative:
+                        # Store the replacement info
+                        replacements.append({
+                            'start': mention.start_char,
+                            'end': mention.end_char,
+                            'original': mention.text,
+                            'replacement': representative
+                        })
             
-            # If no named entity found, use the first mention
-            if not representative:
-                representative = chain[0].text
-            
-            # Create replacements for all mentions except the representative
-            for mention in chain:
-                if mention.text != representative:
-                    # Store the replacement info
-                    replacements.append({
-                        'start': mention.start_char,
-                        'end': mention.end_char,
-                        'original': mention.text,
-                        'replacement': representative
-                    })
+            # Apply replacements in reverse order to maintain character positions
+            replacements.sort(key=lambda x: x['start'], reverse=True)
+            for repl in replacements[:50]:  # Limit replacements to avoid excessive processing
+                resolved_text = (
+                    resolved_text[:repl['start']] + 
+                    repl['replacement'] + 
+                    resolved_text[repl['end']:]
+                )
         
-        # Apply replacements in reverse order to maintain character positions
-        replacements.sort(key=lambda x: x['start'], reverse=True)
-        for repl in replacements:
-            resolved_text = (
-                resolved_text[:repl['start']] + 
-                repl['replacement'] + 
-                resolved_text[repl['end']:]
-            )
-    
-    return resolved_text, dict(entities)
+        return resolved_text, dict(entities)
+    except Exception as e:
+        print(f"Error processing text with Stanza: {e}")
+        return text, {}
 
 # Extract relations using Stanford OpenIE
 def extract_relations_openie(text):
@@ -166,38 +182,42 @@ def extract_relations_stanza(text, entities):
     Extract relations from text using Stanza's dependency parsing.
     This is a simpler approach than OpenIE but works well for basic relations.
     """
-    doc = nlp(text)
-    triples = []
-    
-    # Flatten entity list
-    all_entities = set()
-    for entity_list in entities.values():
-        all_entities.update(entity_list)
-    
-    for sent in doc.sentences:
-        # Look for subject-verb-object patterns
-        for word in sent.words:
-            if word.upos == 'VERB':
-                # Find subject and object
-                subject = None
-                obj = None
-                
-                for child in sent.words:
-                    if child.head == word.id:
-                        if child.deprel in ['nsubj', 'nsubj:pass']:
-                            subject = child.text
-                        elif child.deprel in ['obj', 'dobj', 'iobj']:
-                            obj = child.text
-                
-                # Create triple if both subject and object found
-                if subject and obj:
-                    triples.append({
-                        'subject': subject,
-                        'relation': word.text,
-                        'object': obj
-                    })
-    
-    return pd.DataFrame(triples)
+    try:
+        doc = nlp(text[:MAX_TEXT_LENGTH])  # Limit text length
+        triples = []
+        
+        # Flatten entity list
+        all_entities = set()
+        for entity_list in entities.values():
+            all_entities.update(entity_list)
+        
+        for sent in doc.sentences:
+            # Look for subject-verb-object patterns
+            for word in sent.words:
+                if word.upos == 'VERB':
+                    # Find subject and object
+                    subject = None
+                    obj = None
+                    
+                    for child in sent.words:
+                        if child.head == word.id:
+                            if child.deprel in ['nsubj', 'nsubj:pass']:
+                                subject = child.text
+                            elif child.deprel in ['obj', 'dobj', 'iobj']:
+                                obj = child.text
+                    
+                    # Create triple if both subject and object found
+                    if subject and obj:
+                        triples.append({
+                            'subject': subject,
+                            'relation': word.text,
+                            'object': obj
+                        })
+        
+        return pd.DataFrame(triples)
+    except Exception as e:
+        print(f"Error in Stanza relation extraction: {e}")
+        return pd.DataFrame(columns=['subject', 'relation', 'object'])
 
 # Entity linking using sentence transformers
 def link_entities(triple_df, confidence_threshold=0.85):
@@ -216,27 +236,37 @@ def link_entities(triple_df, confidence_threshold=0.85):
     if len(entity_list) < 2:
         return triple_df
     
-    # Encode all entities
-    embeddings = entity_linker_model.encode(entity_list, convert_to_tensor=True)
-    
-    # Find similar entities
+    # Process entities in smaller batches to avoid memory issues
     entity_mapping = {}
-    for i in range(len(entity_list)):
-        if entity_list[i] in entity_mapping:
-            continue
-            
-        for j in range(i + 1, len(entity_list)):
-            if entity_list[j] in entity_mapping:
+    batch_size = 500
+    
+    for i in range(0, len(entity_list), batch_size):
+        batch = entity_list[i:i+batch_size]
+        
+        # Encode batch
+        embeddings = entity_linker_model.encode(batch, convert_to_tensor=True)
+        
+        # Find similar entities within batch
+        for j in range(len(batch)):
+            if batch[j] in entity_mapping:
                 continue
                 
-            similarity = util.pytorch_cos_sim(embeddings[i], embeddings[j])[0][0].item()
-            
-            if similarity > confidence_threshold:
-                # Use the shorter entity as the canonical form
-                if len(entity_list[i]) <= len(entity_list[j]):
-                    entity_mapping[entity_list[j]] = entity_list[i]
-                else:
-                    entity_mapping[entity_list[i]] = entity_list[j]
+            for k in range(j + 1, len(batch)):
+                if batch[k] in entity_mapping:
+                    continue
+                    
+                similarity = util.pytorch_cos_sim(embeddings[j], embeddings[k])[0][0].item()
+                
+                if similarity > confidence_threshold:
+                    # Use the shorter entity as the canonical form
+                    if len(batch[j]) <= len(batch[k]):
+                        entity_mapping[batch[k]] = batch[j]
+                    else:
+                        entity_mapping[batch[j]] = batch[k]
+        
+        # Clear GPU memory if using CUDA
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
     # Apply entity mapping to the triple dataframe
     triple_df['subject'] = triple_df['subject'].map(lambda x: entity_mapping.get(x, x))
@@ -244,90 +274,121 @@ def link_entities(triple_df, confidence_threshold=0.85):
     
     return triple_df.drop_duplicates()
 
-# Create knowledge graph from processed data
-def build_knowledge_graph(chunks_data):
+# Save triples to database
+def save_triples_to_db(triples_df, chunk_id):
+    """Save extracted triples to database for later viewing."""
+    if len(triples_df) == 0:
+        return
+        
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            # Create table if it doesn't exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS entity_triples (
+                    id SERIAL PRIMARY KEY,
+                    chunk_id INTEGER REFERENCES document_chunks(id),
+                    subject TEXT NOT NULL,
+                    relation TEXT NOT NULL,
+                    object TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Insert triples
+            for _, row in triples_df.iterrows():
+                cursor.execute("""
+                    INSERT INTO entity_triples (chunk_id, subject, relation, object)
+                    VALUES (%s, %s, %s, %s)
+                """, (chunk_id, row['subject'], row['relation'], row['object']))
+            
+            conn.commit()
+
+# Create knowledge graph from processed data in batches
+def build_knowledge_graph_incremental():
     """
-    Build a knowledge graph from document chunks using Stanza processing.
+    Build a knowledge graph from document chunks using batch processing.
     """
     G = nx.Graph()
-    all_triples = []
+    total_chunks = get_chunk_count()
+    print(f"Total chunks to process: {total_chunks}")
     
-    for chunk_id, text, metadata, _ in chunks_data:
-        metadata_dict = json.loads(metadata) if isinstance(metadata, str) else metadata
+    # Process chunks in batches
+    for offset in range(0, total_chunks, BATCH_SIZE):
+        print(f"Processing batch {offset//BATCH_SIZE + 1} of {(total_chunks + BATCH_SIZE - 1)//BATCH_SIZE}")
         
-        # Add chunk node
-        G.add_node(f"chunk_{chunk_id}", 
-                   type="chunk", 
-                   text=text[:100] + "...", 
-                   source=metadata_dict.get("source", "unknown"))
+        # Fetch batch
+        chunks_batch = fetch_data_batch(offset, BATCH_SIZE)
         
-        # Process text with Stanza
-        resolved_text, entities = process_text_with_stanza(text)
-        
-        # Extract relations (try OpenIE first, fallback to Stanza)
-        try:
-            relations_df = extract_relations_openie(resolved_text)
-            if len(relations_df) == 0:
+        for chunk_id, text, metadata, _ in chunks_batch:
+            metadata_dict = json.loads(metadata) if isinstance(metadata, str) else metadata
+            
+            # Add chunk node
+            G.add_node(f"chunk_{chunk_id}", 
+                       type="chunk", 
+                       text=text[:100] + "...", 
+                       source=metadata_dict.get("source", "unknown"))
+            
+            # Process text with Stanza
+            resolved_text, entities = process_text_with_stanza(text)
+            
+            # Extract relations (try OpenIE first, fallback to Stanza)
+            try:
+                relations_df = extract_relations_openie(resolved_text)
+                if len(relations_df) == 0:
+                    relations_df = extract_relations_stanza(resolved_text, entities)
+            except:
                 relations_df = extract_relations_stanza(resolved_text, entities)
-        except:
-            relations_df = extract_relations_stanza(resolved_text, entities)
-        
-        # Add entities as nodes
-        for entity_type, entity_list in entities.items():
-            for entity in entity_list:
-                entity_id = f"{entity_type}_{entity}"
+            
+            # Save triples to database
+            save_triples_to_db(relations_df, chunk_id)
+            
+            # Add entities as nodes
+            for entity_type, entity_list in entities.items():
+                for entity in entity_list[:50]:  # Limit entities per chunk
+                    entity_id = f"{entity_type}_{entity}"
+                    
+                    # Add entity node if it doesn't exist
+                    if not G.has_node(entity_id):
+                        G.add_node(entity_id, type="entity", entity_type=entity_type, text=entity)
+                    
+                    # Connect entity to chunk
+                    G.add_edge(f"chunk_{chunk_id}", entity_id, weight=1, relation="contains")
+            
+            # Add relations as edges
+            for _, row in relations_df.iterrows():
+                # Create nodes for subject and object if they don't exist
+                subj_id = f"ENTITY_{row['subject']}"
+                obj_id = f"ENTITY_{row['object']}"
                 
-                # Add entity node if it doesn't exist
-                if not G.has_node(entity_id):
-                    G.add_node(entity_id, type="entity", entity_type=entity_type, text=entity)
+                if not G.has_node(subj_id):
+                    G.add_node(subj_id, type="entity", entity_type="EXTRACTED", text=row['subject'])
+                if not G.has_node(obj_id):
+                    G.add_node(obj_id, type="entity", entity_type="EXTRACTED", text=row['object'])
                 
-                # Connect entity to chunk
-                G.add_edge(f"chunk_{chunk_id}", entity_id, weight=1, relation="contains")
+                # Add relation edge
+                G.add_edge(subj_id, obj_id, weight=1, relation=row['relation'])
+                
+                # Connect to chunk
+                G.add_edge(f"chunk_{chunk_id}", subj_id, weight=0.5, relation="mentions")
+                G.add_edge(f"chunk_{chunk_id}", obj_id, weight=0.5, relation="mentions")
         
-        # Add relations as edges
-        for _, row in relations_df.iterrows():
-            # Create nodes for subject and object if they don't exist
-            subj_id = f"ENTITY_{row['subject']}"
-            obj_id = f"ENTITY_{row['object']}"
-            
-            if not G.has_node(subj_id):
-                G.add_node(subj_id, type="entity", entity_type="EXTRACTED", text=row['subject'])
-            if not G.has_node(obj_id):
-                G.add_node(obj_id, type="entity", entity_type="EXTRACTED", text=row['object'])
-            
-            # Add relation edge
-            G.add_edge(subj_id, obj_id, weight=1, relation=row['relation'])
-            
-            # Connect to chunk
-            G.add_edge(f"chunk_{chunk_id}", subj_id, weight=0.5, relation="mentions")
-            G.add_edge(f"chunk_{chunk_id}", obj_id, weight=0.5, relation="mentions")
+        # Periodic cleanup
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
-        # Collect triples for entity linking
-        all_triples.append(relations_df)
-    
-    # Perform entity linking across all triples
-    if all_triples:
-        combined_triples = pd.concat(all_triples, ignore_index=True)
-        linked_triples = link_entities(combined_triples)
-        
-        # Update graph with linked entities
-        for _, row in linked_triples.iterrows():
-            subj_id = f"ENTITY_{row['subject']}"
-            obj_id = f"ENTITY_{row['object']}"
-            
-            if G.has_node(subj_id) and G.has_node(obj_id):
-                # Increase edge weight if it already exists
-                if G.has_edge(subj_id, obj_id):
-                    G[subj_id][obj_id]['weight'] += 1
-                else:
-                    G.add_edge(subj_id, obj_id, weight=1, relation=row['relation'])
+        # Save intermediate graph state every 10 batches
+        if (offset // BATCH_SIZE + 1) % 10 == 0:
+            print(f"Saving intermediate graph state...")
+            save_outputs(G, [])  # Save graph without summaries for now
     
     return G
 
 # Generate summaries for entity communities using LLM
-def generate_entity_summaries(G, chunks_data):
+def generate_entity_summaries_batched(G):
     """
     Generate summaries for communities of entities in the graph.
+    Process chunks from database in batches to avoid loading all into memory.
     """
     # Detect communities
     try:
@@ -357,19 +418,30 @@ def generate_entity_summaries(G, chunks_data):
         if len(entity_nodes) < 3:
             continue
         
-        # Get chunk texts connected to these entities
-        chunk_texts = []
+        # Get chunk IDs connected to these entities
         chunk_ids = set()
         for entity_node in entity_nodes:
             for neighbor in G.neighbors(entity_node):
                 if G.nodes[neighbor]["type"] == "chunk":
                     chunk_id = int(neighbor.replace("chunk_", ""))
-                    if chunk_id not in chunk_ids:
-                        chunk_ids.add(chunk_id)
-                        for c_id, text, _, _ in chunks_data:
-                            if c_id == chunk_id:
-                                chunk_texts.append(text)
-                                break
+                    chunk_ids.add(chunk_id)
+        
+        if not chunk_ids:
+            continue
+        
+        # Fetch chunk texts from database (limit to avoid memory issues)
+        chunk_texts = []
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT text_content 
+                    FROM document_chunks 
+                    WHERE id = ANY(%s)
+                    LIMIT 5
+                """, (list(chunk_ids)[:5],))
+                
+                for row in cursor:
+                    chunk_texts.append(row[0])
         
         if not chunk_texts:
             continue
@@ -403,7 +475,7 @@ def generate_entity_summaries(G, chunks_data):
         {relations_text}
         
         Context:
-        {context}
+        {context[:2000]}
         
         Provide a 2-3 sentence summary that explains the main theme connecting these entities and their significance. Focus on the relationships and patterns you observe.
         """
@@ -490,31 +562,77 @@ def save_outputs(G, summaries):
     print(f"Saved graph with {len(G.nodes())} nodes and {len(G.edges())} edges")
     print(f"Generated {len(summaries)} community summaries")
 
+# Create database view for triples
+def create_triples_view():
+    """Create a database view for easy access to entity triples."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                CREATE OR REPLACE VIEW entity_triples_view AS
+                SELECT 
+                    et.id,
+                    et.chunk_id,
+                    et.subject,
+                    et.relation,
+                    et.object,
+                    et.created_at,
+                    dc.source_metadata->>'source' as source_file,
+                    dc.source_metadata->>'page' as page_number
+                FROM entity_triples et
+                JOIN document_chunks dc ON et.chunk_id = dc.id
+                ORDER BY et.created_at DESC;
+            """)
+            
+            # Create indexes for better performance
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_entity_triples_subject 
+                ON entity_triples(subject);
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_entity_triples_object 
+                ON entity_triples(object);
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_entity_triples_relation 
+                ON entity_triples(relation);
+            """)
+            
+            conn.commit()
+            print("Created entity_triples_view for easy access to relationships")
+
 # Main processing function
 def process_graph():
     """
     Main function to process chunks and build knowledge graph.
     """
-    print("Starting GraphRAG processing with Stanza...")
+    print("Starting optimized GraphRAG processing...")
     
-    # Fetch data
-    chunks_data = fetch_data()
-    if not chunks_data:
+    # Create triples view if it doesn't exist
+    create_triples_view()
+    
+    # Check if there's data to process
+    total_chunks = get_chunk_count()
+    if total_chunks == 0:
         print("No data to process")
         return
     
-    print(f"Fetched {len(chunks_data)} document chunks")
+    print(f"Total chunks to process: {total_chunks}")
     
-    # Build graph with Stanza processing
-    G = build_knowledge_graph(chunks_data)
+    # Build graph incrementally
+    G = build_knowledge_graph_incremental()
     
-    # Generate summaries
-    summaries = generate_entity_summaries(G, chunks_data)
+    # Generate summaries with batched processing
+    summaries = generate_entity_summaries_batched(G)
     
     # Save outputs
     save_outputs(G, summaries)
     
-    print("GraphRAG processing completed")
+    # Final cleanup
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
+    print("Optimized GraphRAG processing completed")
 
 # Main function
 def main():

@@ -26,7 +26,7 @@ RUN cd /tmp && \
 ENV CORENLP_HOME=/opt/corenlp
 
 # Copy application code
-COPY app_stanza.py app.py
+COPY app.py app.py
 
 # Create output directory
 RUN mkdir -p /app/outputs

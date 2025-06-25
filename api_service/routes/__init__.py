@@ -9,6 +9,7 @@ from .export_routes import router as export_router
 from .health_routes import router as health_router
 from .ragas_routes import router as ragas_router
 from .document_routes import router as document_router
+from .graph_routes import router as graph_router
 
 # Create main router
 main_router = APIRouter()
@@ -24,3 +25,4 @@ main_router.include_router(export_router, prefix="/export", tags=["Export"])
 main_router.include_router(health_router, tags=["Health"])
 main_router.include_router(ragas_router, prefix="/ragas", tags=["RAGAS Evaluation"])
 main_router.include_router(document_router, prefix="/document", tags=["Document"])
+main_router.include_router(graph_router, prefix="/graph", tags=["Knowledge Graph"])
