@@ -189,17 +189,56 @@ async def get_graph_stats():
         
         return {
             "timestamp": graph_refs.get("timestamp"),
-            "num_nodes": graph_refs.get("num_nodes", 0),
-            "num_edges": graph_refs.get("num_edges", 0),
-            "num_communities": graph_refs.get("num_communities", 0),
+            "total_triples": graph_refs.get("total_triples", 0),
+            "total_entities": graph_refs.get("total_entities", 0),
+            "total_chunks": graph_refs.get("total_chunks", 0),
             "files": {
-                "edges": os.path.basename(graph_refs.get("edges", "")),
-                "nodes": os.path.basename(graph_refs.get("nodes", "")),
-                "summaries": os.path.basename(graph_refs.get("summaries", ""))
+                "triples_csv": os.path.basename(graph_refs.get("triples_csv", "")),
+                "triples_ttl": os.path.basename(graph_refs.get("triples_ttl", "")),
+                "entities_csv": os.path.basename(graph_refs.get("entities_csv", "")),
+                "stats": os.path.basename(graph_refs.get("stats", ""))
             }
         }
         
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Graph data not found. Please run the GraphRAG processor first.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/export/{filename}")
+async def download_export_file(filename: str):
+    """
+    Download exported graph files (CSV, TTL, or JSON).
+    """
+    try:
+        import os
+        from fastapi.responses import FileResponse
+        
+        # Validate filename to prevent path traversal
+        if ".." in filename or "/" in filename or "\\" in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        
+        # Check if file exists
+        file_path = os.path.join(os.environ.get("GRAPH_OUTPUT_PATH", "/app/graph_data"), filename)
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Determine media type based on extension
+        if filename.endswith('.csv'):
+            media_type = 'text/csv'
+        elif filename.endswith('.ttl'):
+            media_type = 'text/turtle'
+        elif filename.endswith('.json'):
+            media_type = 'application/json'
+        else:
+            media_type = 'application/octet-stream'
+        
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type=media_type
+        )
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
