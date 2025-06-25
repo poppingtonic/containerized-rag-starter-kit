@@ -18,6 +18,9 @@ RUN pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url h
 # Install other Python dependencies
 RUN pip install --no-cache-dir -r requirements_stanza.txt
 
+# Install spaCy model
+RUN python -m spacy download en_core_web_sm
+
 # Download Stanford CoreNLP for OpenIE (required by stanford-openie)
 RUN cd /tmp && \
     wget https://nlp.stanford.edu/software/stanford-corenlp-4.5.5.zip && \

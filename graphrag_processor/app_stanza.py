@@ -19,6 +19,7 @@ DB_URL = os.environ.get("DATABASE_URL")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/app/outputs")
 PROCESSING_INTERVAL = int(os.environ.get("PROCESSING_INTERVAL", "3600"))  # Default: 1 hour
+CORENLP_HOME = os.environ.get("CORENLP_HOME")
 
 # Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)

@@ -28,3 +28,4 @@ sentence-transformers==2.5.1
 
 # Additional utilities
 tqdm==4.66.1
+scipy==1.11.4
