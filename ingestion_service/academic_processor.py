@@ -14,43 +14,43 @@ from typing import Optional, List, Dict, Tuple, Any
 import hashlib
 from datetime import datetime
 
+# try:
+import lxml
+import spacy
+from bs4 import BeautifulSoup
+from pydantic import BaseModel, Field
+from grobid_client.grobid_client import GrobidClient
+from collections.abc import Iterator
+from typing import Annotated, Literal
+    
+# Try new import path first, then fallback
 try:
-    import lxml
-    import spacy
-    from bs4 import BeautifulSoup
-    from pydantic import BaseModel, Field
-    from grobid_client.grobid_client import GrobidClient
-    from collections.abc import Iterator
-    from typing import Annotated, Literal
+    from langchain_community.embeddings import OpenAIEmbeddings
+except ImportError:
+    from langchain.embeddings.openai import OpenAIEmbeddings
     
-    # Try new import path first, then fallback
-    try:
-        from langchain_community.embeddings import OpenAIEmbeddings
-    except ImportError:
-        from langchain.embeddings.openai import OpenAIEmbeddings
-    
-    try:
-        from haystack.components.converters import TextFileToDocument
-        from haystack.components.preprocessors import DocumentCleaner, DocumentSplitter
-        from haystack import Document
-    except ImportError:
-        # Haystack not available, will handle in functions
-        TextFileToDocument = None
-        DocumentCleaner = None
-        DocumentSplitter = None
-        Document = None
-    
-    ACADEMIC_DEPENDENCIES_AVAILABLE = True
-    
-except ImportError as e:
-    print(f"Academic processing dependencies not available: {e}")
-    ACADEMIC_DEPENDENCIES_AVAILABLE = False
-    # Define minimal classes for basic functionality
-    OpenAIEmbeddings = None
-    TextFileToDocument = None
-    DocumentCleaner = None
-    DocumentSplitter = None
-    Document = None
+# try:
+from haystack.components.converters import TextFileToDocument
+from haystack.components.preprocessors import DocumentCleaner, DocumentSplitter
+from haystack import Document
+# except ImportError:
+#     # Haystack not available, will handle in functions
+#     TextFileToDocument = None
+#     DocumentCleaner = None
+#     DocumentSplitter = None
+#     Document = None
+
+ACADEMIC_DEPENDENCIES_AVAILABLE = True
+
+# except ImportError as e:
+#     print(f"Academic processing dependencies not available: {e}")
+#     ACADEMIC_DEPENDENCIES_AVAILABLE = False
+#     # Define minimal classes for basic functionality
+#     OpenAIEmbeddings = None
+#     TextFileToDocument = None
+#     DocumentCleaner = None
+#     DocumentSplitter = None
+#     Document = None
 
 from config import OPENAI_API_KEY
 
@@ -174,8 +174,14 @@ def save_pdf_text(paper_body: List[Dict], file_name: str):
 def process_with_grobid(file_path: Path) -> Tuple[Optional[str], List[str]]:
     """Process PDF with GROBID for structured academic parsing."""
     try:
+        # Check if running in Docker (by checking if /app exists)
+        if os.path.exists('/app'):
+            config_path = "./grobid_config_docker.json"
+        else:
+            config_path = "./grobid_config.json"
+            
         # Initialize GROBID client
-        client = GrobidClient(config_path="./grobid_config.json")
+        client = GrobidClient(config_path=config_path)
         
         # Process with GROBID
         _, status, text = client.process_pdf(
@@ -206,7 +212,7 @@ def process_with_fallback_api(file_path: Path) -> List[str]:
     """Fallback processing using external API or standard processors."""
     try:
         # Import here to avoid circular imports
-        from .file_processors import process_file
+        from file_processors import process_file
         
         # Use the standard file processors as fallback
         content, _, _ = process_file(str(file_path))
