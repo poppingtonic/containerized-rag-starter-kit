@@ -1,0 +1,58 @@
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+# Install Python 3.10
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    wget \
+    unzip \
+    default-jre \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set python3.10 as default python
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+WORKDIR /app
+
+# Copy requirements
+COPY requirements_stanza.txt requirements.txt
+
+# Install PyTorch with CUDA support (version 2.1.0 or higher for sentence-transformers)
+RUN pip install torch==2.1.0+cu118 torchvision==0.16.0+cu118 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118
+
+# Install other Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Download Stanford CoreNLP for OpenIE (required by stanford-openie)
+RUN cd /tmp && \
+    wget --no-check-certificate https://nlp.stanford.edu/software/stanford-corenlp-4.5.10.zip && \
+    unzip stanford-corenlp-4.5.10.zip && \
+    mv stanford-corenlp-4.5.10 /opt/corenlp && \
+    rm stanford-corenlp-4.5.10.zip
+
+# Set environment variable for Stanford CoreNLP
+ENV CORENLP_HOME=/opt/corenlp
+
+# Enable CUDA
+ENV CUDA_VISIBLE_DEVICES=0
+ENV TORCH_CUDA_ARCH_LIST="6.0;6.1;7.0;7.5;8.0;8.6;8.9;9.0"
+
+# Copy application code
+COPY app_stanza.py app.py
+
+# Create output directory
+RUN mkdir -p /app/outputs
+
+# Pre-download Stanza models during build
+RUN python -c "import stanza; stanza.download('en', verbose=False)"
+
+# Note: Sentence transformer model will be downloaded on first run
+# Pre-load sentence transformer model
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+# Pre-downloading during build can show issues with different PyTorch versions
+
+# Run the GraphRAG processor
+CMD ["python", "-u", "app.py"]
