@@ -16,5 +16,5 @@ lxml==5.4.0
 spacy==3.8.7
 beautifulsoup4==4.13.4
 pydantic==2.11.5
-grobid-client-python==0.0.9
+grobid-client-python==0.0.11
 haystack-ai==2.14.2

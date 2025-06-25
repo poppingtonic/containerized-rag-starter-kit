@@ -30,11 +30,15 @@ try:
         from langchain.embeddings.openai import OpenAIEmbeddings
     
     try:
-        from haystack.nodes import TextConverter, PreProcessor
+        from haystack.components.converters import TextFileToDocument
+        from haystack.components.preprocessors import DocumentCleaner, DocumentSplitter
+        from haystack import Document
     except ImportError:
         # Haystack not available, will handle in functions
-        TextConverter = None
-        PreProcessor = None
+        TextFileToDocument = None
+        DocumentCleaner = None
+        DocumentSplitter = None
+        Document = None
     
     ACADEMIC_DEPENDENCIES_AVAILABLE = True
     
@@ -43,8 +47,10 @@ except ImportError as e:
     ACADEMIC_DEPENDENCIES_AVAILABLE = False
     # Define minimal classes for basic functionality
     OpenAIEmbeddings = None
-    TextConverter = None
-    PreProcessor = None
+    TextFileToDocument = None
+    DocumentCleaner = None
+    DocumentSplitter = None
+    Document = None
 
 from config import OPENAI_API_KEY
 
@@ -60,8 +66,8 @@ if ACADEMIC_DEPENDENCIES_AVAILABLE:
             print("Warning: No spaCy model found. Academic processing may be limited.")
             nlp = None
     
-    if TextConverter:
-        txt_converter = TextConverter(valid_languages=["en"])
+    if TextFileToDocument:
+        txt_converter = TextFileToDocument()
     else:
         txt_converter = None
 else:
@@ -215,22 +221,51 @@ def process_with_fallback_api(file_path: Path) -> List[str]:
 
 
 def process_txt_with_preprocessing(file_path: Path) -> List[str]:
-    """Process text files with Haystack preprocessing."""
+    """Process text files with Haystack 2.x preprocessing."""
     try:
-        doc_txt = txt_converter.convert(file_path=str(file_path), meta=None)[0]
-        preprocessor = PreProcessor(
-            clean_empty_lines=True,
-            clean_whitespace=True,
-            clean_header_footer=False,
+        if not txt_converter or not DocumentCleaner or not DocumentSplitter:
+            # Fallback if Haystack not available
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # Simple paragraph splitting
+            return [p.strip() for p in content.split('\n\n') if p.strip()]
+        
+        # Convert file to document
+        result = txt_converter.run(sources=[str(file_path)])
+        documents = result.get('documents', [])
+        
+        if not documents:
+            return []
+        
+        # Clean documents
+        cleaner = DocumentCleaner(
+            remove_empty_lines=True,
+            remove_extra_whitespaces=True,
+            remove_repeated_substrings=False
+        )
+        cleaned_result = cleaner.run(documents=documents)
+        cleaned_docs = cleaned_result.get('documents', documents)
+        
+        # Split documents
+        splitter = DocumentSplitter(
             split_by="word",
             split_length=100,
-            split_respect_sentence_boundary=True
+            split_overlap=0,
+            split_threshold=0
         )
-        docs = preprocessor.process([doc_txt])
-        return [doc.content for doc in docs]
+        split_result = splitter.run(documents=cleaned_docs)
+        split_docs = split_result.get('documents', [])
+        
+        return [doc.content for doc in split_docs if doc.content]
     except Exception as e:
         print(f"Text preprocessing failed: {e}")
-        return []
+        # Fallback to simple file reading
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return [p.strip() for p in content.split('\n\n') if p.strip()]
+        except:
+            return []
 
 
 def parse_embed_file(file_path: Path) -> List[Dict[str, Any]]:
