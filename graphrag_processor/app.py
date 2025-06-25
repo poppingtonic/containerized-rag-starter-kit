@@ -3,12 +3,16 @@ import json
 import time
 import psycopg2
 import networkx as nx
-import spacy
+import stanza
 import pandas as pd
 import numpy as np
 from openai import OpenAI
 import jsonlines
 from datetime import datetime
+from collections import defaultdict
+from sentence_transformers import SentenceTransformer, util
+from stanford_openie import StanfordOpenIE
+import torch
 
 # Configuration from environment variables
 DB_URL = os.environ.get("DATABASE_URL")
@@ -19,12 +23,16 @@ PROCESSING_INTERVAL = int(os.environ.get("PROCESSING_INTERVAL", "3600"))  # Defa
 # Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Initialize spaCy for NER
-try:
-    nlp = spacy.load("en_core_web_sm")
-except:
-    spacy.cli.download("en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm")
+# Initialize Stanza pipeline with all required processors
+print("Initializing Stanza pipeline...")
+stanza.download('en', verbose=False)  # Download models if not present
+nlp = stanza.Pipeline('en', processors='tokenize,mwt,pos,lemma,ner,depparse,coref', verbose=False, use_gpu=torch.cuda.is_available())
+
+# Initialize sentence transformer for entity linking
+entity_linker_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Initialize Stanford OpenIE for relation extraction
+openie_client = None
 
 # Database connection
 def get_db_connection():
@@ -49,65 +57,222 @@ def fetch_data():
             # Return list of (id, text, metadata, embedding)
             return cursor.fetchall()
 
-# Extract entities from text using spaCy
-def extract_entities(text):
-    entities = {}
+# Process text with Stanza for NER and coreference resolution
+def process_text_with_stanza(text):
+    """
+    Process text using Stanza to extract entities and resolve coreferences.
+    Returns processed text and entity dictionary.
+    """
+    # Limit text length to avoid memory issues
+    if len(text) > 10000:
+        text = text[:10000]
     
-    try:
-        # Limit text length to avoid memory issues
-        if len(text) > 10000:
-            text = text[:10000]
-            
-        doc = nlp(text)
-        
-        for ent in doc.ents:
-            # Skip very short entities or those with non-alphanumeric characters only
-            if len(ent.text.strip()) < 2 or not any(c.isalnum() for c in ent.text):
-                continue
-                
-            entity_type = ent.label_
+    # Process with Stanza
+    doc = nlp(text)
+    
+    # Extract entities
+    entities = defaultdict(list)
+    for sent in doc.sentences:
+        for ent in sent.ents:
+            entity_type = ent.type
             entity_text = ent.text.strip()
             
-            if entity_type not in entities:
-                entities[entity_type] = []
-            
+            # Skip very short entities or those with non-alphanumeric characters only
+            if len(entity_text) < 2 or not any(c.isalnum() for c in entity_text):
+                continue
+                
             if entity_text not in entities[entity_type]:
                 entities[entity_type].append(entity_text)
+    
+    # Process coreferences and create resolved text
+    resolved_text = text
+    if hasattr(doc, 'coref_chains') and doc.coref_chains:
+        # Build a mapping of mention spans to their representative mention
+        replacements = []
         
-        # Add some additional entities based on noun chunks for more connections
-        if len(entities) < 3:
-            for chunk in doc.noun_chunks:
-                if len(chunk.text.strip()) > 3 and len(chunk.text.strip()) < 50:
-                    if "NOUN_CHUNK" not in entities:
-                        entities["NOUN_CHUNK"] = []
-                    
-                    chunk_text = chunk.text.strip()
-                    if chunk_text not in entities["NOUN_CHUNK"]:
-                        entities["NOUN_CHUNK"].append(chunk_text)
+        for chain in doc.coref_chains:
+            if len(chain) < 2:
+                continue
+                
+            # Find the representative mention (prefer named entities)
+            representative = None
+            for mention in chain:
+                mention_text = mention.text
+                # Check if this mention is a named entity
+                for entity_type, entity_list in entities.items():
+                    if mention_text in entity_list:
+                        representative = mention_text
+                        break
+                if representative:
+                    break
+            
+            # If no named entity found, use the first mention
+            if not representative:
+                representative = chain[0].text
+            
+            # Create replacements for all mentions except the representative
+            for mention in chain:
+                if mention.text != representative:
+                    # Store the replacement info
+                    replacements.append({
+                        'start': mention.start_char,
+                        'end': mention.end_char,
+                        'original': mention.text,
+                        'replacement': representative
+                    })
+        
+        # Apply replacements in reverse order to maintain character positions
+        replacements.sort(key=lambda x: x['start'], reverse=True)
+        for repl in replacements:
+            resolved_text = (
+                resolved_text[:repl['start']] + 
+                repl['replacement'] + 
+                resolved_text[repl['end']:]
+            )
     
-    except Exception as e:
-        print(f"Error extracting entities: {e}")
-        # Return empty dict on error rather than failing
-        return {}
-    
-    return entities
+    return resolved_text, dict(entities)
 
-# Create knowledge graph
-def build_knowledge_graph(chunks_data):
-    G = nx.Graph()
+# Extract relations using Stanford OpenIE
+def extract_relations_openie(text):
+    """
+    Extract relations from text using Stanford OpenIE.
+    Returns a DataFrame with subject, relation, object triples.
+    """
+    global openie_client
     
-    # Add nodes for chunks
+    if openie_client is None:
+        try:
+            openie_client = StanfordOpenIE()
+        except Exception as e:
+            print(f"Failed to initialize OpenIE: {e}")
+            return pd.DataFrame(columns=['subject', 'relation', 'object'])
+    
+    try:
+        triples = []
+        for triple in openie_client.annotate(text):
+            triples.append({
+                'subject': triple['subject'],
+                'relation': triple['relation'],
+                'object': triple['object']
+            })
+        return pd.DataFrame(triples)
+    except Exception as e:
+        print(f"Error extracting relations: {e}")
+        return pd.DataFrame(columns=['subject', 'relation', 'object'])
+
+# Extract relations using Stanza dependency parsing as fallback
+def extract_relations_stanza(text, entities):
+    """
+    Extract relations from text using Stanza's dependency parsing.
+    This is a simpler approach than OpenIE but works well for basic relations.
+    """
+    doc = nlp(text)
+    triples = []
+    
+    # Flatten entity list
+    all_entities = set()
+    for entity_list in entities.values():
+        all_entities.update(entity_list)
+    
+    for sent in doc.sentences:
+        # Look for subject-verb-object patterns
+        for word in sent.words:
+            if word.upos == 'VERB':
+                # Find subject and object
+                subject = None
+                obj = None
+                
+                for child in sent.words:
+                    if child.head == word.id:
+                        if child.deprel in ['nsubj', 'nsubj:pass']:
+                            subject = child.text
+                        elif child.deprel in ['obj', 'dobj', 'iobj']:
+                            obj = child.text
+                
+                # Create triple if both subject and object found
+                if subject and obj:
+                    triples.append({
+                        'subject': subject,
+                        'relation': word.text,
+                        'object': obj
+                    })
+    
+    return pd.DataFrame(triples)
+
+# Entity linking using sentence transformers
+def link_entities(triple_df, confidence_threshold=0.85):
+    """
+    Link similar entities using sentence transformers.
+    """
+    if len(triple_df) == 0:
+        return triple_df
+    
+    # Get all unique entities
+    all_entities = set()
+    all_entities.update(triple_df['subject'].unique())
+    all_entities.update(triple_df['object'].unique())
+    entity_list = list(all_entities)
+    
+    if len(entity_list) < 2:
+        return triple_df
+    
+    # Encode all entities
+    embeddings = entity_linker_model.encode(entity_list, convert_to_tensor=True)
+    
+    # Find similar entities
+    entity_mapping = {}
+    for i in range(len(entity_list)):
+        if entity_list[i] in entity_mapping:
+            continue
+            
+        for j in range(i + 1, len(entity_list)):
+            if entity_list[j] in entity_mapping:
+                continue
+                
+            similarity = util.pytorch_cos_sim(embeddings[i], embeddings[j])[0][0].item()
+            
+            if similarity > confidence_threshold:
+                # Use the shorter entity as the canonical form
+                if len(entity_list[i]) <= len(entity_list[j]):
+                    entity_mapping[entity_list[j]] = entity_list[i]
+                else:
+                    entity_mapping[entity_list[i]] = entity_list[j]
+    
+    # Apply entity mapping to the triple dataframe
+    triple_df['subject'] = triple_df['subject'].map(lambda x: entity_mapping.get(x, x))
+    triple_df['object'] = triple_df['object'].map(lambda x: entity_mapping.get(x, x))
+    
+    return triple_df.drop_duplicates()
+
+# Create knowledge graph from processed data
+def build_knowledge_graph(chunks_data):
+    """
+    Build a knowledge graph from document chunks using Stanza processing.
+    """
+    G = nx.Graph()
+    all_triples = []
+    
     for chunk_id, text, metadata, _ in chunks_data:
         metadata_dict = json.loads(metadata) if isinstance(metadata, str) else metadata
+        
+        # Add chunk node
         G.add_node(f"chunk_{chunk_id}", 
                    type="chunk", 
                    text=text[:100] + "...", 
                    source=metadata_dict.get("source", "unknown"))
         
-        # Extract entities
-        entities = extract_entities(text)
+        # Process text with Stanza
+        resolved_text, entities = process_text_with_stanza(text)
         
-        # Add entity nodes and connect to chunks
+        # Extract relations (try OpenIE first, fallback to Stanza)
+        try:
+            relations_df = extract_relations_openie(resolved_text)
+            if len(relations_df) == 0:
+                relations_df = extract_relations_stanza(resolved_text, entities)
+        except:
+            relations_df = extract_relations_stanza(resolved_text, entities)
+        
+        # Add entities as nodes
         for entity_type, entity_list in entities.items():
             for entity in entity_list:
                 entity_id = f"{entity_type}_{entity}"
@@ -117,127 +282,179 @@ def build_knowledge_graph(chunks_data):
                     G.add_node(entity_id, type="entity", entity_type=entity_type, text=entity)
                 
                 # Connect entity to chunk
-                G.add_edge(f"chunk_{chunk_id}", entity_id, weight=1)
+                G.add_edge(f"chunk_{chunk_id}", entity_id, weight=1, relation="contains")
+        
+        # Add relations as edges
+        for _, row in relations_df.iterrows():
+            # Create nodes for subject and object if they don't exist
+            subj_id = f"ENTITY_{row['subject']}"
+            obj_id = f"ENTITY_{row['object']}"
+            
+            if not G.has_node(subj_id):
+                G.add_node(subj_id, type="entity", entity_type="EXTRACTED", text=row['subject'])
+            if not G.has_node(obj_id):
+                G.add_node(obj_id, type="entity", entity_type="EXTRACTED", text=row['object'])
+            
+            # Add relation edge
+            G.add_edge(subj_id, obj_id, weight=1, relation=row['relation'])
+            
+            # Connect to chunk
+            G.add_edge(f"chunk_{chunk_id}", subj_id, weight=0.5, relation="mentions")
+            G.add_edge(f"chunk_{chunk_id}", obj_id, weight=0.5, relation="mentions")
+        
+        # Collect triples for entity linking
+        all_triples.append(relations_df)
     
-    # Add edges between entities that appear in the same chunks
-    entity_nodes = [n for n, attr in G.nodes(data=True) if attr["type"] == "entity"]
-    for i, entity1 in enumerate(entity_nodes):
-        for entity2 in entity_nodes[i+1:]:
-            # Get common neighbors (chunks)
-            common_chunks = list(nx.common_neighbors(G, entity1, entity2))
-            if common_chunks:
-                # Weight by number of common chunks
-                G.add_edge(entity1, entity2, weight=len(common_chunks))
+    # Perform entity linking across all triples
+    if all_triples:
+        combined_triples = pd.concat(all_triples, ignore_index=True)
+        linked_triples = link_entities(combined_triples)
+        
+        # Update graph with linked entities
+        for _, row in linked_triples.iterrows():
+            subj_id = f"ENTITY_{row['subject']}"
+            obj_id = f"ENTITY_{row['object']}"
+            
+            if G.has_node(subj_id) and G.has_node(obj_id):
+                # Increase edge weight if it already exists
+                if G.has_edge(subj_id, obj_id):
+                    G[subj_id][obj_id]['weight'] += 1
+                else:
+                    G.add_edge(subj_id, obj_id, weight=1, relation=row['relation'])
     
     return G
 
 # Generate summaries for entity communities using LLM
 def generate_entity_summaries(G, chunks_data):
-    # Detect communities using Louvain method
+    """
+    Generate summaries for communities of entities in the graph.
+    """
+    # Detect communities
     try:
-        import community as community_louvain
-        partition = community_louvain.best_partition(G)
-        print("Successfully used Louvain community detection")
+        from networkx.algorithms import community
+        communities = list(community.greedy_modularity_communities(G))
+        
+        # Convert to partition format
+        partition = {}
+        for i, comm in enumerate(communities):
+            for node in comm:
+                partition[node] = i
     except Exception as e:
-        print(f"Louvain method failed: {e}")
-        try:
-            # Fallback to a simpler approach using networkx built-in
-            print("Falling back to networkx community detection")
-            from networkx.algorithms import community
-            partition = {}
-            communities = list(community.greedy_modularity_communities(G))
-            for i, comm in enumerate(communities):
-                for node in comm:
-                    partition[node] = i
-        except Exception as e:
-            print(f"Community detection failed: {e}")
-            # Last resort: create a simple partition with all entities in one community
-            print("Creating simple partition as last resort")
-            partition = {node: 0 for node in G.nodes()}
+        print(f"Community detection failed: {e}")
+        # Fallback: put all entities in one community
+        partition = {node: 0 for node in G.nodes()}
     
     # Group nodes by community
-    communities = {}
+    communities = defaultdict(list)
     for node, community_id in partition.items():
-        if community_id not in communities:
-            communities[community_id] = []
         communities[community_id].append(node)
     
     # Generate summaries for each significant community
     summaries = []
     for community_id, nodes in communities.items():
-        # Only process communities with at least 3 nodes
-        if len(nodes) < 3:
-            continue
-        
-        # Get entity nodes in this community
+        # Only process communities with at least 3 entity nodes
         entity_nodes = [n for n in nodes if G.nodes[n]["type"] == "entity"]
-        if not entity_nodes:
+        if len(entity_nodes) < 3:
             continue
         
-        # Get chunk nodes connected to these entities
+        # Get chunk texts connected to these entities
         chunk_texts = []
+        chunk_ids = set()
         for entity_node in entity_nodes:
             for neighbor in G.neighbors(entity_node):
                 if G.nodes[neighbor]["type"] == "chunk":
-                    # Get original text
                     chunk_id = int(neighbor.replace("chunk_", ""))
-                    for c_id, text, _, _ in chunks_data:
-                        if c_id == chunk_id:
-                            chunk_texts.append(text)
-                            break
+                    if chunk_id not in chunk_ids:
+                        chunk_ids.add(chunk_id)
+                        for c_id, text, _, _ in chunks_data:
+                            if c_id == chunk_id:
+                                chunk_texts.append(text)
+                                break
         
-        # Prepare context for the summary
-        entity_info = [f"{G.nodes[n]['text']} ({G.nodes[n]['entity_type']})" for n in entity_nodes]
-        context = "\n".join(chunk_texts[:5])  # Limit to first 5 chunks to avoid token limits
+        if not chunk_texts:
+            continue
+        
+        # Prepare entity information
+        entity_info = []
+        for n in entity_nodes[:20]:  # Limit to top 20 entities
+            node_data = G.nodes[n]
+            entity_info.append(f"{node_data['text']} ({node_data.get('entity_type', 'ENTITY')})")
+        
+        # Extract key relations for this community
+        relations = []
+        for n1 in entity_nodes:
+            for n2 in G.neighbors(n1):
+                if n2 in entity_nodes and G.has_edge(n1, n2):
+                    edge_data = G[n1][n2]
+                    if 'relation' in edge_data and edge_data['relation'] != 'contains':
+                        relations.append(f"{G.nodes[n1]['text']} - {edge_data['relation']} - {G.nodes[n2]['text']}")
         
         # Generate summary with OpenAI
-        prompt = f"""
-        Generate a concise summary about the following entities based on the provided context.
+        context = "\n".join(chunk_texts[:3])  # Limit context to avoid token limits
+        relations_text = "\n".join(relations[:10]) if relations else "No specific relations found."
         
-        Entities:
+        prompt = f"""
+        Generate a concise summary about the following group of related entities based on the provided context.
+        
+        Key Entities:
         {', '.join(entity_info)}
+        
+        Key Relations:
+        {relations_text}
         
         Context:
         {context}
         
-        Provide a 2-3 sentence summary that explains the relationships between these entities and their significance.
+        Provide a 2-3 sentence summary that explains the main theme connecting these entities and their significance. Focus on the relationships and patterns you observe.
         """
         
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that creates concise summaries."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=200,
-            temperature=0.5
-        )
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that creates concise summaries of entity relationships."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200,
+                temperature=0.5
+            )
+            
+            summary = response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"Error generating summary: {e}")
+            summary = f"Community of {len(entity_nodes)} entities including: {', '.join(entity_info[:5])}"
         
-        summary = response.choices[0].message.content.strip()
         summaries.append({
             "community_id": community_id,
             "entities": entity_info,
             "summary": summary,
-            "related_chunks": [int(n.replace("chunk_", "")) for n in nodes if G.nodes[n]["type"] == "chunk"]
+            "num_entities": len(entity_nodes),
+            "num_chunks": len(chunk_ids),
+            "key_relations": relations[:5]
         })
     
     return summaries
 
 # Save graph and summaries
 def save_outputs(G, summaries):
+    """
+    Save the knowledge graph and community summaries.
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Create output directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
-    # Save graph as edge list
+    # Save graph as edge list with relation information
     edges_file = os.path.join(OUTPUT_DIR, f"graph_edges_{timestamp}.csv")
     with open(edges_file, 'w') as f:
-        f.write("source,target,weight,source_type,target_type\n")
+        f.write("source,target,weight,relation,source_type,target_type\n")
         for source, target, data in G.edges(data=True):
             source_type = G.nodes[source]["type"]
             target_type = G.nodes[target]["type"]
-            f.write(f"{source},{target},{data.get('weight', 1)},{source_type},{target_type}\n")
+            relation = data.get('relation', '')
+            weight = data.get('weight', 1)
+            f.write(f"{source},{target},{weight},{relation},{source_type},{target_type}\n")
     
     # Save node attributes
     nodes_file = os.path.join(OUTPUT_DIR, f"graph_nodes_{timestamp}.csv")
@@ -250,7 +467,7 @@ def save_outputs(G, summaries):
             source = attrs.get("source", "")
             f.write(f"{node},{node_type},{entity_type},{text},{source}\n")
     
-    # Save summaries
+    # Save summaries with extended information
     summaries_file = os.path.join(OUTPUT_DIR, f"summaries_{timestamp}.jsonl")
     with jsonlines.open(summaries_file, mode='w') as writer:
         for summary in summaries:
@@ -261,7 +478,10 @@ def save_outputs(G, summaries):
         "edges": edges_file,
         "nodes": nodes_file,
         "summaries": summaries_file,
-        "timestamp": timestamp
+        "timestamp": timestamp,
+        "num_nodes": len(G.nodes()),
+        "num_edges": len(G.edges()),
+        "num_communities": len(summaries)
     }
     
     with open(os.path.join(OUTPUT_DIR, "latest_refs.json"), 'w') as f:
@@ -272,7 +492,10 @@ def save_outputs(G, summaries):
 
 # Main processing function
 def process_graph():
-    print("Starting GraphRAG processing...")
+    """
+    Main function to process chunks and build knowledge graph.
+    """
+    print("Starting GraphRAG processing with Stanza...")
     
     # Fetch data
     chunks_data = fetch_data()
@@ -282,7 +505,7 @@ def process_graph():
     
     print(f"Fetched {len(chunks_data)} document chunks")
     
-    # Build graph
+    # Build graph with Stanza processing
     G = build_knowledge_graph(chunks_data)
     
     # Generate summaries
