@@ -3,6 +3,8 @@ import json
 import pandas as pd
 import networkx as nx
 import jsonlines
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from typing import List, Dict, Any, Optional, Tuple
 from utils import Config
 
@@ -11,49 +13,78 @@ class GraphService:
         self.graph = None
         self.summaries = None
         self.refs = None
+        self.db_url = Config.DB_URL
         self._load_graph_data()
     
     def _load_graph_data(self):
-        """Load GraphRAG outputs."""
+        """Load GraphRAG outputs from database."""
         try:
-            # Load latest references
-            refs_path = os.path.join(Config.GRAPH_OUTPUT_PATH, "latest_refs.json")
-            if not os.path.exists(refs_path):
-                print("No GraphRAG data found. Using vector search only.")
-                return
-                
-            with open(refs_path, 'r') as f:
-                self.refs = json.load(f)
-            
-            # Load edges
-            edges_df = pd.read_csv(self.refs["edges"])
-            
-            # Load nodes
-            nodes_df = pd.read_csv(self.refs["nodes"])
-            
-            # Load summaries
-            self.summaries = []
-            with jsonlines.open(self.refs["summaries"]) as reader:
-                for summary in reader:
-                    self.summaries.append(summary)
-            
-            # Build graph
-            self.graph = nx.Graph()
-            
-            # Add nodes
-            for _, row in nodes_df.iterrows():
-                self.graph.add_node(row["id"], 
-                          type=row["type"], 
-                          entity_type=row["entity_type"], 
-                          text=row["text"],
-                          source=row["source"])
-            
-            # Add edges
-            for _, row in edges_df.iterrows():
-                self.graph.add_edge(row["source"], row["target"], weight=row["weight"])
-                
+            with psycopg2.connect(self.db_url) as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    # Check if we have any graph data
+                    cursor.execute("SELECT COUNT(*) as count FROM graph_nodes")
+                    if cursor.fetchone()['count'] == 0:
+                        print("No GraphRAG data found in database. Using vector search only.")
+                        return
+                    
+                    # Build graph
+                    self.graph = nx.Graph()
+                    
+                    # Load nodes from the latest processing timestamp
+                    cursor.execute("""
+                        SELECT * FROM latest_graph_nodes
+                    """)
+                    
+                    nodes = cursor.fetchall()
+                    for node in nodes:
+                        self.graph.add_node(node["node_id"], 
+                                  type=node["node_type"], 
+                                  entity_type=node["entity_type"], 
+                                  text=node["text"],
+                                  source=node["source"])
+                    
+                    # Load edges from the latest processing timestamp
+                    cursor.execute("""
+                        SELECT * FROM latest_graph_edges
+                    """)
+                    
+                    edges = cursor.fetchall()
+                    for edge in edges:
+                        self.graph.add_edge(edge["source_node"], 
+                                          edge["target_node"], 
+                                          weight=edge["weight"],
+                                          relation=edge["relation"])
+                    
+                    # Load summaries from the latest processing timestamp
+                    cursor.execute("""
+                        SELECT * FROM latest_community_summaries
+                        ORDER BY community_id
+                    """)
+                    
+                    self.summaries = []
+                    for summary in cursor.fetchall():
+                        self.summaries.append({
+                            "community_id": summary["community_id"],
+                            "summary": summary["summary"],
+                            "entities": summary["entities"],
+                            "key_relations": summary["key_relations"],
+                            "num_entities": summary["num_entities"],
+                            "num_chunks": summary["num_chunks"],
+                            "related_chunks": []  # We'll need to compute this if needed
+                        })
+                    
+                    # Store metadata
+                    self.refs = {
+                        "num_nodes": len(nodes),
+                        "num_edges": len(edges),
+                        "num_communities": len(self.summaries),
+                        "source": "database"
+                    }
+                    
+                    print(f"Loaded graph with {len(nodes)} nodes and {len(edges)} edges from database")
+                    
         except Exception as e:
-            print(f"Error loading graph data: {e}")
+            print(f"Error loading graph data from database: {e}")
             self.graph = None
             self.summaries = None
             self.refs = None
@@ -97,10 +128,6 @@ class GraphService:
         # Find relevant communities
         relevant_communities = set()
         for summary in self.summaries:
-            # Check if any retrieved chunks are in this community
-            if any(chunk_id in summary["related_chunks"] for chunk in chunks for chunk_id in [chunk["id"]]):
-                relevant_communities.add(summary["community_id"])
-            
             # Check if any relevant entities are mentioned in this community
             if any(entity_info in summary["entities"] for entity in relevant_entities 
                   for entity_info in summary["entities"] if self.graph.nodes[entity]["text"] in entity_info):
@@ -109,14 +136,12 @@ class GraphService:
         # Add community information
         for summary in self.summaries:
             if summary["community_id"] in relevant_communities:
-                # Calculate relevance based on chunk and entity overlap
-                chunk_overlap = sum(1 for chunk in chunks if chunk["id"] in summary["related_chunks"])
+                # Calculate relevance based on entity overlap
                 entity_overlap = sum(1 for entity in relevant_entities 
                                    for entity_info in summary["entities"] if self.graph.nodes[entity]["text"] in entity_info)
                 
-                total_factors = len(chunks) + len(relevant_entities)
-                if total_factors > 0:
-                    relevance = (chunk_overlap + entity_overlap) / total_factors
+                if len(relevant_entities) > 0:
+                    relevance = entity_overlap / len(relevant_entities)
                 else:
                     relevance = 0.0
                 

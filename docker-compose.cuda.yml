@@ -1,0 +1,26 @@
+services:
+  graphrag-processor:
+    build:
+      context: ./graphrag_processor
+      dockerfile: Dockerfile.cuda
+    runtime: nvidia
+    environment:
+      - DATABASE_URL=postgresql://graphraguser:graphragpassword@db:5432/graphragdb
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OUTPUT_DIR=/app/outputs
+      - PROCESSING_INTERVAL=3600
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - graphrag_outputs:/app/outputs
+    depends_on:
+      - db
+      - ingestion-service
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
