@@ -1,14 +1,14 @@
 <template>
   <div class="home-view">
     <div class="query-section">
-      <h1>ILRI Animal Health AI Pilot </h1>
-      <p class="subtitle">Ask questions about animal health and veterinary care</p>
+      <h1>ILRI Animal Health Answers</h1>
+      <p class="subtitle">Ask questions about animal health, diseases, pathogens, or veterinary care. This is a pilot project using AI to unearth answers to animal health questions from both ILRI's own body of published work as well as related materials. For more information please contact the Data and Research Methods Unit.</p>
       
       <form @submit.prevent="submitQuery" class="query-form">
         <input 
           v-model="queryInput" 
           type="text" 
-          placeholder="Ask a question about animal health and veterinary care..."
+          placeholder="Ask a question about animal health..."
           class="query-input"
           :disabled="loading"
         />
@@ -163,7 +163,7 @@ export default {
     }
     
     const openDoi = (doi) => {
-      const url = doi.startsWith('http') ? doi : `https://dx.doi.org/${doi}`
+      const url = doi.startsWith('http') ? doi : `https://doi.org/${doi}`
       window.open(url, '_blank')
     }
     

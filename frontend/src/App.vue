@@ -3,7 +3,7 @@
     <nav class="navbar">
       <div class="nav-container">
         <router-link to="/" class="nav-brand">
-          <h1>ILRI Animal Health AI Pilot </h1>
+          <h1>ILRI Animal Health Answers</h1>
         </router-link>
         
         <div class="nav-links">

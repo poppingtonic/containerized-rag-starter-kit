@@ -96,7 +96,7 @@ class QueryService:
                     references.append(doc['reference'])
                 # Priority 2: Use DOI link if available
                 elif doc.get('doi'):
-                    references.append(f"https://dx.doi.org/{doc['doi']}")
+                    references.append(f"https://doi.org/{doc['doi']}")
                 # No fallback to filename - skip if no citation or DOI
         
         return references
@@ -156,7 +156,7 @@ class QueryService:
                 if document_id in documents_by_id:
                     doc = documents_by_id[document_id]
                     if doc.get('doi'):
-                        references.append(f"https://dx.doi.org/{doc['doi']}")
+                        references.append(f"https://doi.org/{doc['doi']}")
         # else:
         #     # Non-academic mode: Try to get DOI links from document table
         #     references = []
@@ -181,7 +181,7 @@ class QueryService:
         #         if document_id in documents_by_id:
         #             doc = documents_by_id[document_id]
         #             if doc.get('doi'):
-        #                 references.append(f"https://dx.doi.org/{doc['doi']}")
+        #                 references.append(f"https://doi.org/{doc['doi']}")
         
         # Generate answer with OpenAI
         prompt = f"""
