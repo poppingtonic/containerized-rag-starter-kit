@@ -96,10 +96,10 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_document_updated_at
-    BEFORE UPDATE ON document
-    FOR EACH ROW
-    EXECUTE FUNCTION update_document_updated_at();
+-- CREATE TRIGGER update_document_updated_at
+--     BEFORE UPDATE ON document
+--     FOR EACH ROW
+--     EXECUTE FUNCTION update_document_updated_at();
 
 -- Verification queries (uncomment to run)
 -- SELECT 'Documents created:' as info, COUNT(*) as count FROM document;
