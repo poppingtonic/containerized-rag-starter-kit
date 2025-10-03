@@ -180,7 +180,21 @@ class ConsilienceMCPServer:
                     "type": "object",
                     "properties": {}
                 }
-            )
+            ),
+            Tool(
+                name="upload_document",
+                description="Upload a document to the API service and trigger ingestion",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "Local path to a file accessible by the MCP server (shared volume)"
+                        }
+                    },
+                    "required": ["file_path"]
+                }
+            ),
         ]
     
     async def handle_call_tool(self, name: str, arguments: Dict[str, Any]) -> List[TextContent]:
@@ -196,6 +210,8 @@ class ConsilienceMCPServer:
                 result = await self._get_ingestion_status()
             elif name == "process_file":
                 result = await self._process_file(arguments)
+            elif name == "upload_document":
+                result = await self._upload_document(arguments)
             elif name == "get_ingestion_progress":
                 result = await self._get_ingestion_progress()
             elif name == "list_documents":
@@ -461,6 +477,36 @@ class ConsilienceMCPServer:
             
         except Exception as e:
             logger.error(f"Database error: {str(e)}")
+            return {"error": str(e)}
+    
+    async def _upload_document(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Upload a document via the API service and trigger ingestion.
+        Expects a local file path accessible to this process. The API service will store the file to its upload dir and enqueue ingestion.
+        """
+        file_path = args["file_path"]
+        api_url = os.getenv("API_SERVICE_URL", "http://api-service:8000")
+        upload_url = f"{api_url.rstrip('/')}/document/upload"
+
+        if not os.path.exists(file_path):
+            return {"error": f"File not found: {file_path}"}
+
+        try:
+            import aiohttp
+            form = aiohttp.FormData()
+            form.add_field(
+                'file',
+                open(file_path, 'rb'),
+                filename=os.path.basename(file_path),
+                content_type='application/octet-stream'
+            )
+            async with aiohttp.ClientSession() as session:
+                async with session.post(upload_url, data=form) as response:
+                    try:
+                        return await response.json()
+                    except Exception:
+                        text = await response.text()
+                        return {"status": response.status, "body": text}
+        except Exception as e:
             return {"error": str(e)}
     
     async def run(self):
