@@ -1,11 +1,11 @@
 # Changelog
 
-All notable changes to the doc-mcp project will be documented in this file.
+All notable changes to the Consilience project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2025-06-21
+## [Unreleased] - 2025-09-25
 
 ### Added
 - **MCP Server Component**: New Model Context Protocol server for programmatic access
@@ -14,7 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Provides 9 tools: query_documents, simple_query, trigger_ingestion, process_file, etc.
   - Full Docker integration with health checks and startup scripts
   - Comprehensive documentation in mcp_server/README.md
-
+- **Upload Document Endpoint**: Added `POST /document/upload` in API service
+  - Accepts multipart file uploads and saves to shared volume
+  - Optionally mirrors uploads to Azure Blob Storage when enabled
+  - Automatically triggers ingestion-service `/process-file` with the saved local path
+- **MCP Tool: upload_document**
+  - New tool to upload a file via API and trigger ingestion
+  - Uses `API_SERVICE_URL` and multipart form data via aiohttp
+- **Azure Storage (Optional)**
+  - Added env-driven Azure Blob mirroring for API uploads and GraphRAG outputs
+  - New envs: `AZURE_STORAGE_ENABLED`, `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER`, `AZURE_STORAGE_PREFIX`, `AZURE_OUTPUTS_PREFIX`
 - **Single File Processing**: New endpoint for processing individual documents
   - `POST /process-file` endpoint in API service
   - Routes to ingestion service for immediate file processing
@@ -27,12 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Changed frontend branding (UI, page title, package name)
   - Updated all documentation to reflect new name
   - Renamed MCP server class to ConsilienceMCPServer
-
 - **Endpoint Standardization**: Renamed ingestion endpoints for consistency
   - `/force-process` → `/process-file` (more descriptive naming)
   - Updated all references in code and documentation
   - Maintained backward compatibility in ingestion service
-
+- **Docker Compose**: Share uploads volume with API service and expose new envs
+  - Mounted `./data:/app/data` for `api-service` so ingestion can read uploaded files
+  - Added `API_SERVICE_URL` to `mcp-server`
+  - Added optional Azure env placeholders for `api-service` and `graphrag-processor`
 - **Documentation Updates**: Comprehensive updates to reflect changes
   - CLAUDE.md now includes MCP server usage and new endpoints
   - README.md updated with Consilience branding
@@ -175,13 +186,13 @@ AMPLIFICATION_MIN_CONTEXT_LENGTH=500
 - **Frontend Reliability**: Fixed component crashes when loading favorites and threads
 
 ### Verified Functionality
-- ✅ Query endpoint working with comprehensive answers and citations
-- ✅ Memory caching and retrieval working correctly
-- ✅ Vector similarity search functioning properly
-- ✅ Reference extraction and source attribution working
-- ✅ Favorites and threads endpoints returning proper data
-- ✅ Frontend components loading without JavaScript errors
-- ✅ All Docker services running and communicating correctly
+- Query endpoint working with comprehensive answers and citations
+- Memory caching and retrieval working correctly
+- Vector similarity search functioning properly
+- Reference extraction and source attribution working
+- Favorites and threads endpoints returning proper data
+- Frontend components loading without JavaScript errors
+- All Docker services running and communicating correctly
 
 ---
 

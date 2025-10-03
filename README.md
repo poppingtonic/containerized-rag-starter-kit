@@ -48,6 +48,7 @@ The application is fully containerized using Docker and consists of the followin
 - Caches results for similar future queries
 - Supports conversation threads and feedback
 - Provides `/process-file` endpoint for single file processing
+- Provides `/document/upload` endpoint for uploading documents
 
 ### 5. Frontend
 - Provides a user-friendly interface
@@ -61,6 +62,7 @@ The application is fully containerized using Docker and consists of the followin
 
 - Docker and Docker Compose
 - OpenAI API key
+- (Optional) Azure Storage account and connection string if you want cloud mirroring
 
 ### Installation
 
@@ -73,6 +75,12 @@ The application is fully containerized using Docker and consists of the followin
 2. Create a `.env` file in the root directory with your OpenAI API key:
    ```
    OPENAI_API_KEY=your_openai_api_key_here
+   # Optional Azure configuration for cloud mirroring
+   AZURE_STORAGE_ENABLED=false
+   AZURE_STORAGE_CONNECTION_STRING=
+   AZURE_STORAGE_CONTAINER=documents
+   AZURE_STORAGE_PREFIX=uploads/
+   AZURE_OUTPUTS_PREFIX=graphrag/
    ```
 
 3. Build and start the containers:
@@ -84,37 +92,6 @@ The application is fully containerized using Docker and consists of the followin
    - Frontend: http://localhost:8080
    - API: http://localhost:8000
    - Database: localhost:5433 (PostgreSQL)
-
-## Development
-
-#### Frontend
-
-1. Go to /frontend
-
-2. Run `$ yarn`
-
-3. Run `$ yarn dev`
-
-4. Open browser to http://localhost:5173/
-
-## FAQ
-
-### Database Backup and Restore
-
-The system includes scripts for database backup and restore operations:
-
-```bash
-# Create a manual backup (default location: ./backups)
-./scripts/backup_db.sh [backup_directory]
-
-# Restore from a backup
-./scripts/restore_db.sh path/to/backup_file.sql.gz
-
-# Setup scheduled backups with rotation (keeps last 7 by default)
-./scripts/scheduled_backup.sh [backup_directory] [retention_count]
-```
-
-For detailed information, see [Database Backup and Restore](docs/backup_restore.md).
 
 ## Usage
 
@@ -129,6 +106,32 @@ For detailed information, see [Database Backup and Restore](docs/backup_restore.
 
 > **Note:** The system supports scanned PDFs and images through OCR processing
 
+#### Upload via API (New)
+You can now upload a document directly via the API. The file is saved to the shared volume so the ingestion service can process it automatically.
+
+Endpoint:
+```
+POST /document/upload
+```
+Request example:
+```bash
+curl -F "file=@/path/to/your.pdf" http://localhost:8000/document/upload
+```
+Response includes:
+- `status`, `filename`, `local_path`
+- `azure_blob_url` when Azure mirroring is enabled
+- `ingestion` with the ingestion-service response
+
+By default, files are saved under `/app/data/uploads` inside the `api-service` container. This path is shared with the ingestion-service via docker-compose so it can read the uploaded files.
+
+#### Upload via MCP (New)
+The MCP server exposes an `upload_document` tool that sends a multipart upload to the API and triggers ingestion.
+
+- Tool: `upload_document`
+- Args: `{ "file_path": "/app/data/your.pdf" }`
+
+The MCP server uses `API_SERVICE_URL` (default `http://api-service:8000`) to reach the API. If you mount the local `./data` directory into the MCP container (enabled in docker-compose), you can reference files under `/app/data`.
+
 #### Bulk Import from Zotero
 The project includes two scripts for importing documents in bulk from Zotero storage:
 
@@ -137,11 +140,6 @@ The project includes two scripts for importing documents in bulk from Zotero sto
    ```
    ./scripts/import_documents.sh /home/mu/Zotero/storage
    ```
-   
-2. The script will:
-   - Find all PDF, DOCX, and TXT files in the Zotero storage directory and its subdirectories
-   - Copy them to the `data` directory (skipping any duplicates by filename)
-   - Report how many new documents were added
 
 ##### Advanced Import with Metadata
 For a more sophisticated import that preserves folder structure information:
@@ -204,6 +202,7 @@ For handling scanned documents and images:
 2. Enter your query in the search box
 3. View the generated answer with citations
 4. Explore the relevant chunks
+
 ## Technical Details
 
 ### Vector Storage and Search
@@ -261,6 +260,31 @@ writehere-graphrag/
 - Modify the chunking parameters in `ingestion_service/app.py`
 - Adjust the graph processing interval in `graphrag_processor/app.py`
 - Change the UI appearance in `frontend/src/assets/main.css`
+
+## Configuration for Azure Cloud Storage (Optional)
+
+You can optionally mirror uploaded documents and GraphRAG outputs to Azure Blob Storage.
+
+- Set the following environment variables in `.env` (or your deployment environment):
+
+```bash
+AZURE_STORAGE_ENABLED=true
+AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=..."
+AZURE_STORAGE_CONTAINER=documents
+# For API uploads
+AZURE_STORAGE_PREFIX=uploads/
+# For GraphRAG outputs
+AZURE_OUTPUTS_PREFIX=graphrag/
+```
+
+- API uploads to Azure are best-effort: failures are logged but do not block ingestion of the locally saved file.
+- GraphRAG mirrors `edges`, `nodes`, and `summaries` to Azure when enabled.
+
+### Docker Compose notes
+
+- The `api-service` mounts `./data:/app/data`, ensuring uploaded files are visible to the ingestion-service.
+- The `mcp-server` includes `API_SERVICE_URL` and mounts `./data:/app/data` so it can read files for upload.
+- Optional Azure env variables are exposed for `api-service` and `graphrag-processor` services.
 
 ## License
 
