@@ -21,3 +21,18 @@ data_personal
 *.zip
 *.epub
 *.mobi
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Knowledge System specific
+audit_logs/
+*.audit
+*.log
+src/knowledge_system/**/*.pyc

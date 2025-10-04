@@ -1,0 +1,199 @@
+# Example Workflow Configuration for Enterprise Knowledge System
+
+workflows:
+  meeting_tracker:
+    name: "Meeting Tracker"
+    description: "Track meeting notes and action items - only accesses meeting transcripts"
+
+    # Access Control
+    allowed_stores:
+      - meetings
+    required_roles:
+      - employee
+    denied_roles: []
+
+    # Privacy Settings
+    pii_level: metadata_only  # Users only see metadata, not full transcripts
+    obfuscation_enabled: true
+
+    # Audit Settings
+    audit_level: detailed
+    log_queries: true
+    log_results: false
+
+    # Query Settings
+    max_results: 20
+    default_filters:
+      date_range: "last_30_days"
+    enable_amplification: false
+    enable_smart_selection: true
+
+    # Integration
+    integration_type: null
+    integration_config: {}
+
+    active: true
+    metadata:
+      created_by: "admin"
+      department: "all"
+
+  project_assistant:
+    name: "Project Team Assistant"
+    description: "Access project-specific documents and shared files"
+
+    allowed_stores:
+      - project_teams
+      - shared_documents
+    required_roles:
+      - project_member
+      - employee
+
+    pii_level: partial  # Some obfuscation of sensitive data
+    obfuscation_enabled: true
+
+    audit_level: detailed
+    log_queries: true
+    log_results: false
+
+    max_results: 50
+    default_filters: {}
+    enable_amplification: true
+    enable_smart_selection: true
+
+    active: true
+
+  confidential_research:
+    name: "Confidential Research Assistant"
+    description: "Access to market data and confidential research - requires analyst role"
+
+    allowed_stores:
+      - confidential
+    required_roles:
+      - analyst
+      - manager
+    denied_roles:
+      - contractor
+      - external
+
+    pii_level: full  # Full access with no obfuscation
+    obfuscation_enabled: false
+
+    audit_level: forensic  # Maximum audit logging
+    log_queries: true
+    log_results: true  # Log actual results for compliance
+
+    max_results: 30
+    enable_amplification: false
+    enable_smart_selection: true
+
+    active: true
+    metadata:
+      clearance_required: "confidential"
+      compliance_notes: "All access logged for regulatory compliance"
+
+  email_search:
+    name: "Email Search"
+    description: "Search email messages and threads"
+
+    allowed_stores:
+      - emails
+    required_roles:
+      - employee
+
+    pii_level: partial
+    obfuscation_enabled: true
+
+    audit_level: detailed
+    log_queries: true
+    log_results: false
+
+    max_results: 25
+    default_filters:
+      date_range: "last_90_days"
+    enable_smart_selection: true
+
+    integration_type: power_automate
+    integration_config:
+      connector_name: "EmailSearchConnector"
+
+    active: true
+
+  sharepoint_search:
+    name: "SharePoint Document Search"
+    description: "Search across SharePoint sites and libraries"
+
+    allowed_stores:
+      - sharepoint
+    required_roles:
+      - employee
+
+    pii_level: partial
+    obfuscation_enabled: true
+
+    audit_level: basic
+    log_queries: true
+    log_results: false
+
+    max_results: 50
+    default_filters:
+      file_types: ["docx", "pdf", "xlsx"]
+    enable_amplification: true
+    enable_smart_selection: true
+
+    integration_type: copilot_studio
+    integration_config:
+      enable_cards: true
+      enable_suggestions: true
+
+    active: true
+
+  hr_assistant:
+    name: "HR Policy Assistant"
+    description: "Access HR policies and procedures - limited to HR team"
+
+    allowed_stores:
+      - shared_documents
+    required_roles:
+      - hr_team
+      - manager
+
+    pii_level: partial
+    obfuscation_enabled: true
+
+    audit_level: detailed
+    log_queries: true
+    log_results: false
+
+    max_results: 20
+    default_filters:
+      category: "hr_policies"
+
+    active: true
+    metadata:
+      department: "human_resources"
+
+  demo_workflow:
+    name: "Demo Workflow - All Access"
+    description: "Demo workflow with access to multiple stores for testing"
+
+    allowed_stores:
+      - meetings
+      - emails
+      - shared_documents
+    required_roles:
+      - demo_user
+
+    pii_level: metadata_only
+    obfuscation_enabled: true
+
+    audit_level: detailed
+    log_queries: true
+    log_results: false
+
+    max_results: 30
+    enable_smart_selection: true
+
+    active: true
+    metadata:
+      purpose: "demonstration"
+      environment: "test"
