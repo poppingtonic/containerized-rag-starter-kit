@@ -28,10 +28,13 @@ This module extends Consilience with enterprise-grade multi-tenant knowledge man
    - Metadata-only access modes
    - Configurable sensitivity levels
 
-5. **Workflow Router** (`workflows/`)
+5. **Workflow Management** (`workflows/`, `workflow_managers/`)
+   - YAML-based workflow definitions
    - Context-aware tool routing
    - Workflow-specific knowledge store access
    - Integration with Power Automate & Copilot Studio
+   - **LangGraph Studio integration** for visual graph workflows
+   - **Dify integration** for low-code workflow building
 
 ## Knowledge Store Types
 
