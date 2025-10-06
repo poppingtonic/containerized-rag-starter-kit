@@ -21,3 +21,13 @@ data_personal
 *.zip
 *.epub
 *.mobi
+
+# GEPA Training outputs
+gepa_outputs/
+api_service/gepa_outputs/
+*.dspy.json
+*.compiled.json
+
+# Training data
+api_service/data/
+!api_service/data/.gitkeep
