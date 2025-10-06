@@ -58,13 +58,14 @@ else:
 ### 2. Updated GEPAOptimizer Class
 
 **New Parameters:**
-- `reflection_lm`: Separate LM for reflection (typically GPT-4 for better analysis)
-- `max_metric_calls`: Number of evaluation calls (GEPA's efficiency metric)
+- `auto`: Budget mode - "light" (faster) or "heavy" (better performance)
+- `num_threads`: Number of parallel threads for optimization (default: 1)
+- `track_stats`: Whether to track optimization statistics (default: True)
+- `use_merge`: Whether to use merge operations (default: False)
+- `reflection_lm`: Separate LM for reflection using dspy.LM format (typically GPT-4 or GPT-5)
 - `use_gepa`: Toggle between GEPA and MIPRO
 
-**Removed:**
-- `num_candidates`: GEPA doesn't use this parameter
-- `init_temperature`: GEPA doesn't use this parameter
+**Note:** GEPA automatically manages evaluation budget via the `auto` parameter rather than explicit `max_metric_calls`.
 
 ### 3. Updated Training Configuration
 
@@ -75,7 +76,10 @@ class TrainingConfig:
         self,
         ...
         use_gepa: bool = True,  # Enable GEPA by default
-        max_metric_calls: int = 150,  # GEPA parameter
+        gepa_auto: str = "light",  # Budget mode
+        gepa_num_threads: int = 1,  # Parallel threads
+        gepa_track_stats: bool = True,  # Track stats
+        gepa_use_merge: bool = False,  # Merge operations
         ...
     ):
 ```
@@ -105,7 +109,8 @@ config = TrainingConfig(
     openai_api_key=os.getenv("OPENAI_API_KEY"),
     data_path="./data/training_data.json",
     use_gepa=True,  # Use GEPA (default)
-    max_metric_calls=150,  # Efficient optimization
+    gepa_auto="light",  # Use "heavy" for better performance
+    gepa_num_threads=1,  # Increase for parallel optimization
 )
 
 trainer = GEPATrainer(config)
@@ -121,25 +126,34 @@ python gepa_training_pipeline.py --train
 # Explicitly disable GEPA (use MIPRO)
 python gepa_training_pipeline.py --train --no-gepa
 
-# Adjust evaluation budget
-python gepa_training_pipeline.py --train --max-metric-calls 200
+# Use heavy mode for better performance
+python gepa_training_pipeline.py --train --gepa-auto heavy
+
+# Increase parallelization
+python gepa_training_pipeline.py --train --gepa-threads 8
 ```
 
-### Direct GEPA Usage
+### Direct GEPA Usage (Correct API)
 
 ```python
 import dspy
-from dspy.teleprompt import GEPA
+from dspy import GEPA
 
-# Setup models
-task_lm = dspy.OpenAI(model="gpt-3.5-turbo")
-reflection_lm = dspy.OpenAI(model="gpt-4")  # Stronger model for reflection
+# Setup reflection LM using dspy.LM format
+reflection_lm = dspy.LM(
+    model="gpt-4",  # or "gpt-5" for best results
+    temperature=1.0,
+    max_tokens=32000
+)
 
-# Setup GEPA
+# Setup GEPA with correct parameters
 optimizer = GEPA(
-    metric=your_metric_func,
-    task_lm=task_lm,
-    reflection_lm=reflection_lm,
+    metric=your_metric_with_feedback,
+    auto="light",  # or "heavy" for better performance
+    num_threads=32,  # Parallel optimization
+    track_stats=True,  # Track optimization statistics
+    use_merge=False,  # Whether to use merge operations
+    reflection_lm=reflection_lm,  # Stronger model for reflection
 )
 
 # Optimize
@@ -147,7 +161,6 @@ optimized_program = optimizer.compile(
     program=your_rag_module,
     trainset=trainset,
     valset=valset,
-    max_metric_calls=150,
 )
 ```
 
@@ -157,10 +170,11 @@ optimized_program = optimizer.compile(
 |---------|------|-------|
 | **Approach** | Reflective evolution with Pareto front | Multi-prompt instruction proposal |
 | **Efficiency** | 35x fewer evaluations | More evaluations needed |
-| **Key Parameter** | `max_metric_calls` | `num_trials` |
-| **Reflection** | Uses separate reflection LM | No explicit reflection |
+| **Key Parameters** | `auto` (light/heavy), `num_threads` | `num_trials`, `num_candidates` |
+| **Reflection** | Uses separate reflection LM (dspy.LM) | No explicit reflection |
 | **Performance** | 10% better than MIPRO | Baseline |
-| **Candidates** | Pareto front | Fixed num_candidates |
+| **Parallelization** | Built-in (`num_threads`) | Limited |
+| **Budget Control** | Automatic via `auto` parameter | Manual via `num_trials` |
 
 ## Benefits of True GEPA
 

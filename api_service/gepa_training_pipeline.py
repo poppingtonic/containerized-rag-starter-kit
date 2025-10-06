@@ -157,7 +157,10 @@ class TrainingConfig:
         pg_table_name: str = "document_chunks",
         use_multi_hop: bool = True,
         use_gepa: bool = True,
-        max_metric_calls: int = 150,
+        gepa_auto: str = "light",
+        gepa_num_threads: int = 1,
+        gepa_track_stats: bool = True,
+        gepa_use_merge: bool = False,
         num_trials: int = 30,
         max_bootstrapped_demos: int = 4,
         max_labeled_demos: int = 8,
@@ -175,7 +178,10 @@ class TrainingConfig:
         self.pg_table_name = pg_table_name
         self.use_multi_hop = use_multi_hop
         self.use_gepa = use_gepa
-        self.max_metric_calls = max_metric_calls
+        self.gepa_auto = gepa_auto
+        self.gepa_num_threads = gepa_num_threads
+        self.gepa_track_stats = gepa_track_stats
+        self.gepa_use_merge = gepa_use_merge
         self.num_trials = num_trials
         self.max_bootstrapped_demos = max_bootstrapped_demos
         self.max_labeled_demos = max_labeled_demos
@@ -228,7 +234,10 @@ class GEPATrainer:
             metric_model=self.metric_lm,
             reflection_lm=self.metric_lm,  # Use GPT-4 for reflection
             metric_func=metric_func,
-            max_metric_calls=config.max_metric_calls,
+            auto=config.gepa_auto,
+            num_threads=config.gepa_num_threads,
+            track_stats=config.gepa_track_stats,
+            use_merge=config.gepa_use_merge,
             use_gepa=config.use_gepa,
         )
 
@@ -435,7 +444,9 @@ def create_default_config() -> TrainingConfig:
         output_dir="./gepa_outputs",
         use_multi_hop=True,
         use_gepa=True,
-        max_metric_calls=150,
+        gepa_auto="light",  # Use "heavy" for better performance
+        gepa_num_threads=1,
+        gepa_track_stats=True,
         num_trials=30,
     )
 

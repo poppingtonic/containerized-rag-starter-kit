@@ -485,7 +485,10 @@ class GEPAOptimizer:
         task_model: dspy.LM,
         metric_model: dspy.LM,
         metric_func: Optional[Callable] = None,
-        max_metric_calls: int = 150,
+        auto: str = "light",
+        num_threads: int = 1,
+        track_stats: bool = True,
+        use_merge: bool = False,
         reflection_lm: Optional[dspy.LM] = None,
         use_gepa: bool = True,
     ):
@@ -495,20 +498,26 @@ class GEPAOptimizer:
         Args:
             task_model: Language model for RAG tasks
             metric_model: Language model for evaluation
-            metric_func: Custom metric function
-            max_metric_calls: Maximum evaluation calls (GEPA parameter)
-            reflection_lm: LM for reflection (typically stronger model like GPT-4)
+            metric_func: Custom metric function with feedback
+            auto: Budget mode - "light" (faster) or "heavy" (better performance)
+            num_threads: Number of parallel threads for optimization
+            track_stats: Whether to track optimization statistics
+            use_merge: Whether to use merge operations
+            reflection_lm: LM for reflection (typically stronger model like GPT-4/GPT-5)
             use_gepa: Whether to use GEPA (if available) or fall back to MIPRO
         """
         self.task_model = task_model
         self.metric_model = metric_model
         self.reflection_lm = reflection_lm or metric_model
         self.metric_func = metric_func or create_llm_metric(metric_model)
-        self.max_metric_calls = max_metric_calls
+        self.auto = auto
+        self.num_threads = num_threads
+        self.track_stats = track_stats
+        self.use_merge = use_merge
         self.use_gepa = use_gepa and GEPA_AVAILABLE
 
         if self.use_gepa:
-            print("Using GEPA (Genetic-Pareto) optimizer with reflection")
+            print(f"Using GEPA (Genetic-Pareto) optimizer with reflection [auto={auto}]")
         else:
             if not GEPA_AVAILABLE:
                 print("GEPA not available, falling back to MIPRO optimizer")
@@ -543,10 +552,13 @@ class GEPAOptimizer:
 
         if self.use_gepa:
             # Use GEPA optimizer with reflection
-            print(f"Starting GEPA optimization (max {self.max_metric_calls} evaluations)...")
+            print(f"Starting GEPA optimization [auto={self.auto}, threads={self.num_threads}]...")
             optimizer = GEPA(
                 metric=self.metric_func,
-                task_lm=self.task_model,
+                auto=self.auto,
+                num_threads=self.num_threads,
+                track_stats=self.track_stats,
+                use_merge=self.use_merge,
                 reflection_lm=self.reflection_lm,
             )
 
@@ -554,7 +566,6 @@ class GEPAOptimizer:
                 program,
                 trainset=trainset,
                 valset=valset or trainset[:len(trainset)//5],  # Use 20% of train as val if not provided
-                max_metric_calls=self.max_metric_calls,
             )
         else:
             # Fallback to MIPRO optimizer
