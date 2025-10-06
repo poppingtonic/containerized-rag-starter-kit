@@ -16,7 +16,13 @@ import warnings
 from typing import List, Optional, Dict, Any, Callable
 
 import dspy
-from dspy.teleprompt import MIPRO
+try:
+    from dspy.teleprompt import GEPA
+    GEPA_AVAILABLE = True
+except ImportError:
+    # Fallback to MIPRO if GEPA not available in this DSPy version
+    from dspy.teleprompt import MIPRO
+    GEPA_AVAILABLE = False
 from dspy.evaluate import Evaluate
 
 try:
@@ -461,10 +467,17 @@ def create_simple_metric() -> Callable:
 
 class GEPAOptimizer:
     """
-    GEPA (Generative Evolutionary Prompt Adaptation) Optimizer for RAG.
+    GEPA (Genetic-Pareto) Optimizer for RAG.
 
-    Uses MIPRO (Multi-prompt Instruction Proposal) from DSPy to optimize
-    the RAG system through iterative refinement with few-shot examples.
+    GEPA is a reflective prompt evolution optimizer that uses LLM reflection
+    on execution traces to iteratively improve prompts. It maintains a Pareto
+    front of solutions and uses natural language feedback to drive targeted
+    improvements.
+
+    Based on: "GEPA: Reflective Prompt Evolution Can Outperform Reinforcement
+    Learning" (https://arxiv.org/abs/2507.19457)
+
+    If GEPA is not available in your DSPy version, falls back to MIPRO.
     """
 
     def __init__(
@@ -472,8 +485,9 @@ class GEPAOptimizer:
         task_model: dspy.LM,
         metric_model: dspy.LM,
         metric_func: Optional[Callable] = None,
-        num_candidates: int = 10,
-        init_temperature: float = 1.0
+        max_metric_calls: int = 150,
+        reflection_lm: Optional[dspy.LM] = None,
+        use_gepa: bool = True,
     ):
         """
         Initialize GEPA optimizer.
@@ -482,14 +496,24 @@ class GEPAOptimizer:
             task_model: Language model for RAG tasks
             metric_model: Language model for evaluation
             metric_func: Custom metric function
-            num_candidates: Number of candidate prompts to generate
-            init_temperature: Initial temperature for generation
+            max_metric_calls: Maximum evaluation calls (GEPA parameter)
+            reflection_lm: LM for reflection (typically stronger model like GPT-4)
+            use_gepa: Whether to use GEPA (if available) or fall back to MIPRO
         """
         self.task_model = task_model
         self.metric_model = metric_model
+        self.reflection_lm = reflection_lm or metric_model
         self.metric_func = metric_func or create_llm_metric(metric_model)
-        self.num_candidates = num_candidates
-        self.init_temperature = init_temperature
+        self.max_metric_calls = max_metric_calls
+        self.use_gepa = use_gepa and GEPA_AVAILABLE
+
+        if self.use_gepa:
+            print("Using GEPA (Genetic-Pareto) optimizer with reflection")
+        else:
+            if not GEPA_AVAILABLE:
+                print("GEPA not available, falling back to MIPRO optimizer")
+            else:
+                print("Using MIPRO optimizer (GEPA disabled)")
 
     def optimize(
         self,
@@ -501,15 +525,15 @@ class GEPAOptimizer:
         max_labeled_demos: int = 8,
     ) -> dspy.Module:
         """
-        Optimize RAG program using MIPRO.
+        Optimize RAG program using GEPA or MIPRO.
 
         Args:
             program: RAG module to optimize
             trainset: Training examples with questions and expected outputs
             valset: Optional validation set
-            num_trials: Number of optimization trials
-            max_bootstrapped_demos: Max few-shot demos to bootstrap
-            max_labeled_demos: Max labeled demos to use
+            num_trials: Number of optimization trials (MIPRO only)
+            max_bootstrapped_demos: Max few-shot demos to bootstrap (MIPRO only)
+            max_labeled_demos: Max labeled demos to use (MIPRO only)
 
         Returns:
             Optimized RAG module
@@ -517,23 +541,38 @@ class GEPAOptimizer:
         # Configure DSPy
         dspy.settings.configure(lm=self.task_model)
 
-        # Setup MIPRO optimizer
-        optimizer = MIPRO(
-            metric=self.metric_func,
-            num_candidates=self.num_candidates,
-            init_temperature=self.init_temperature,
-        )
+        if self.use_gepa:
+            # Use GEPA optimizer with reflection
+            print(f"Starting GEPA optimization (max {self.max_metric_calls} evaluations)...")
+            optimizer = GEPA(
+                metric=self.metric_func,
+                task_lm=self.task_model,
+                reflection_lm=self.reflection_lm,
+            )
 
-        # Run optimization
-        print(f"Starting GEPA optimization with {num_trials} trials...")
-        optimized_program = optimizer.compile(
-            program,
-            trainset=trainset,
-            valset=valset,
-            num_trials=num_trials,
-            max_bootstrapped_demos=max_bootstrapped_demos,
-            max_labeled_demos=max_labeled_demos,
-        )
+            optimized_program = optimizer.compile(
+                program,
+                trainset=trainset,
+                valset=valset or trainset[:len(trainset)//5],  # Use 20% of train as val if not provided
+                max_metric_calls=self.max_metric_calls,
+            )
+        else:
+            # Fallback to MIPRO optimizer
+            print(f"Starting MIPRO optimization with {num_trials} trials...")
+            optimizer = MIPRO(
+                metric=self.metric_func,
+                num_candidates=10,
+                init_temperature=1.0,
+            )
+
+            optimized_program = optimizer.compile(
+                program,
+                trainset=trainset,
+                valset=valset,
+                num_trials=num_trials,
+                max_bootstrapped_demos=max_bootstrapped_demos,
+                max_labeled_demos=max_labeled_demos,
+            )
 
         print("Optimization complete!")
         return optimized_program

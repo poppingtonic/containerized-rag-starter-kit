@@ -1,8 +1,12 @@
 # GEPA RAG System Requirements
 # Install with: pip install -r requirements-gepa.txt
 
-# Core DSPy framework
-dspy-ai>=2.4.0
+# Core DSPy framework with GEPA optimizer
+# Note: GEPA requires latest DSPy version
+dspy-ai>=2.5.0
+
+# Alternative: Install GEPA separately if not in DSPy
+# gepa>=0.1.0
 
 # Database and vector search
 psycopg2-binary>=2.9.9

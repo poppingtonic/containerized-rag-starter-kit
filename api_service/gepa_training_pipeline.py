@@ -156,10 +156,11 @@ class TrainingConfig:
         output_dir: str = "./gepa_outputs",
         pg_table_name: str = "document_chunks",
         use_multi_hop: bool = True,
+        use_gepa: bool = True,
+        max_metric_calls: int = 150,
         num_trials: int = 30,
         max_bootstrapped_demos: int = 4,
         max_labeled_demos: int = 8,
-        num_candidates: int = 10,
         train_ratio: float = 0.7,
         val_ratio: float = 0.15,
         test_ratio: float = 0.15,
@@ -173,10 +174,11 @@ class TrainingConfig:
         self.output_dir = output_dir
         self.pg_table_name = pg_table_name
         self.use_multi_hop = use_multi_hop
+        self.use_gepa = use_gepa
+        self.max_metric_calls = max_metric_calls
         self.num_trials = num_trials
         self.max_bootstrapped_demos = max_bootstrapped_demos
         self.max_labeled_demos = max_labeled_demos
-        self.num_candidates = num_candidates
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
         self.test_ratio = test_ratio
@@ -224,8 +226,10 @@ class GEPATrainer:
         self.optimizer = GEPAOptimizer(
             task_model=self.task_lm,
             metric_model=self.metric_lm,
+            reflection_lm=self.metric_lm,  # Use GPT-4 for reflection
             metric_func=metric_func,
-            num_candidates=config.num_candidates,
+            max_metric_calls=config.max_metric_calls,
+            use_gepa=config.use_gepa,
         )
 
         # Data will be loaded during training
@@ -430,6 +434,8 @@ def create_default_config() -> TrainingConfig:
         data_path="./data/training_data.json",
         output_dir="./gepa_outputs",
         use_multi_hop=True,
+        use_gepa=True,
+        max_metric_calls=150,
         num_trials=30,
     )
 
