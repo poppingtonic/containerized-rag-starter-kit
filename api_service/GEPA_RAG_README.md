@@ -1,6 +1,6 @@
 # GEPA-Optimized RAG System for Consilience
 
-This directory contains an improved Retrieval Augmented Generation (RAG) system using DSPy with GEPA (Generative Evolutionary Prompt Adaptation) optimizer. The system self-improves based on few-shot examples from the Digest API.
+This directory contains an improved Retrieval Augmented Generation (RAG) system using DSPy with GEPA (Genetic-Pareto) optimizer. The system self-improves based on few-shot examples from the Digest API.
 
 ## Overview
 

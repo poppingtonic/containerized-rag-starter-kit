@@ -2,7 +2,7 @@
 GEPA Training Pipeline for Consilience RAG System
 
 This script provides a complete training pipeline for optimizing the RAG system
-using GEPA (Generative Evolutionary Prompt Adaptation) with few-shot examples.
+using GEPA (Genetic-Pareto) with few-shot examples.
 
 Usage:
     python gepa_training_pipeline.py --config config.json

@@ -2,7 +2,7 @@
 
 ## Overview
 
-I've implemented a complete GEPA (Generative Evolutionary Prompt Adaptation) optimized RAG system for Consilience based on:
+I've implemented a complete GEPA (Genetic-Pareto) optimized RAG system for Consilience based on:
 - Existing DSPy retriever (`api_service/retrievers/pgvector.py`)
 - Analysis notebook (`api_service/digest_api_data_analysis.ipynb`)
 - GEPA tutorial methods (https://dspy.ai/tutorials/gepa_facilitysupportanalyzer/)

@@ -2,7 +2,7 @@
 DSPy-based RAG System with GEPA Optimization for Consilience
 
 This module implements an improved Retrieval Augmented Generation (RAG) system
-using DSPy with GEPA (Generative Evolutionary Prompt Adaptation) optimizer for
+using DSPy with GEPA (Genetic-Pareto) optimizer for
 self-improvement based on few-shot examples.
 
 Based on:
@@ -17,7 +17,7 @@ from typing import List, Optional, Dict, Any, Callable
 
 import dspy
 try:
-    from dspy.teleprompt import GEPA
+    from dspy import GEPA
     GEPA_AVAILABLE = True
 except ImportError:
     # Fallback to MIPRO if GEPA not available in this DSPy version
