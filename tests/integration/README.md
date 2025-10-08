@@ -46,6 +46,15 @@ pytest tests/integration/test_knowledge_system.py::TestKnowledgeSystemIntegratio
 # Run performance tests
 pytest tests/integration/test_knowledge_system.py::TestPerformance -v
 
+# Run store management tests
+pytest tests/integration/test_store_management.py -v
+
+# Run specific store management test
+pytest tests/integration/test_store_management.py::TestStoreManagement::test_store_isolation -v
+
+# Run all tests
+pytest tests/integration/ -v
+
 # Run with detailed output
 pytest tests/integration/test_knowledge_system.py -v -s
 ```
@@ -74,6 +83,19 @@ pytest tests/integration/test_knowledge_system.py -v -s
 ### 5. Performance Tests
 - `test_query_response_time` - Response time check
 - `test_concurrent_queries` - Concurrent load handling
+
+### 6. Store Management Tests (test_store_management.py)
+- `test_create_store` - Dynamic store creation
+- `test_list_stores` - List all stores with statistics
+- `test_get_store_details` - Retrieve specific store info
+- `test_check_store_health` - Store health checks
+- `test_index_document` - Document indexing with chunking/embedding
+- `test_get_store_statistics` - Store analytics
+- `test_create_multiple_stores` - Multiple stores sharing database
+- `test_store_isolation` - Verify data partitioning by store_id
+- `test_delete_store` - Store unregistration
+- `test_nonexistent_store` - Error handling
+- `test_performance` - Performance with multiple stores
 
 ## Test Environment
 
