@@ -35,6 +35,7 @@ from knowledge_system.privacy.obfuscator import DataObfuscator
 from knowledge_system.workflows.router import WorkflowRouter
 from knowledge_system.workflows.config import WorkflowConfig
 from knowledge_system.workflows.models import WorkflowContext
+from knowledge_system.ingestion import SmartIngestionService, IngestionResult
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ rbac_service: Optional[RBACService] = None
 audit_logger: Optional[AuditLogger] = None
 workflow_router: Optional[WorkflowRouter] = None
 store_management_api: Optional[StoreManagementAPI] = None
+ingestion_service: Optional[SmartIngestionService] = None
 
 
 # Request/Response Models
@@ -101,10 +103,27 @@ class HealthResponse(BaseModel):
     components: Dict[str, bool]
 
 
+class IngestFileRequest(BaseModel):
+    filepath: str
+    metadata: Optional[Dict[str, Any]] = None
+    strategy: str = "auto"
+    force_store_id: Optional[str] = None
+
+
+class IngestFileResponse(BaseModel):
+    success: bool
+    filename: str
+    store_id: str
+    doc_id: str
+    routing_info: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    processing_time_seconds: Optional[float] = None
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    global store_manager, rbac_service, audit_logger, workflow_router, store_management_api
+    global store_manager, rbac_service, audit_logger, workflow_router, store_management_api, ingestion_service
 
     logger.info("Starting Knowledge System Service...")
 
@@ -140,6 +159,30 @@ async def startup_event():
             db_connection_string=db_url,
             openai_api_key=openai_api_key
         )
+
+        # Initialize smart ingestion service
+        unstructured_api_url = os.getenv("UNSTRUCTURED_API_URL", "http://unstructured-api:8000")
+        routing_rules_path = os.getenv(
+            "ROUTING_RULES_PATH",
+            "/app/knowledge_system/examples/routing_rules.yaml"
+        )
+
+        # Load store configs from routing rules for auto-creation
+        import yaml
+        store_configs = {}
+        if os.path.exists(routing_rules_path):
+            with open(routing_rules_path, 'r') as f:
+                config = yaml.safe_load(f)
+                store_configs = config.get('store_configs', {})
+
+        ingestion_service = SmartIngestionService(
+            unstructured_api_url=unstructured_api_url,
+            store_management_api=store_management_api,
+            router_config=routing_rules_path,
+            auto_create_stores=True,
+            store_configs=store_configs
+        )
+        logger.info("Smart ingestion service initialized")
 
         # Load workflows
         workflow_config_path = os.getenv(
@@ -209,6 +252,7 @@ async def health_check():
         "audit_logger": audit_logger is not None and audit_logger._initialized,
         "workflow_router": workflow_router is not None,
         "store_management_api": store_management_api is not None,
+        "ingestion_service": ingestion_service is not None,
     }
 
     all_healthy = all(components.values())
@@ -501,6 +545,81 @@ async def get_store_statistics(store_id: str):
     except Exception as e:
         logger.error(f"Error getting store statistics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Smart Ingestion Endpoints
+
+@app.post("/ingest/file", response_model=IngestFileResponse)
+async def ingest_file(request: IngestFileRequest):
+    """
+    Intelligently ingest a file using unstructured-api.
+
+    The file will be:
+    1. Processed by unstructured-api (supports 50+ file types)
+    2. Automatically routed to appropriate knowledge store based on type/content
+    3. Indexed for vector similarity search
+
+    Supported file types: PDF, Word, PowerPoint, Excel, images, emails, and more
+    """
+    if not ingestion_service:
+        raise HTTPException(status_code=503, detail="Ingestion service not initialized")
+
+    try:
+        result = await ingestion_service.ingest_file(
+            filepath=request.filepath,
+            metadata=request.metadata,
+            strategy=request.strategy,
+            force_store_id=request.force_store_id
+        )
+
+        return IngestFileResponse(
+            success=result.success,
+            filename=result.filename,
+            store_id=result.store_id,
+            doc_id=result.doc_id,
+            routing_info=result.routing_info,
+            error=result.error,
+            processing_time_seconds=result.processing_time_seconds
+        )
+
+    except Exception as e:
+        logger.error(f"Error in ingest_file endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ingest/statistics")
+async def get_ingestion_statistics():
+    """Get ingestion statistics including routing info"""
+    if not ingestion_service:
+        raise HTTPException(status_code=503, detail="Ingestion service not initialized")
+
+    try:
+        stats = await ingestion_service.get_ingestion_statistics()
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting ingestion statistics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ingest/routing-rules")
+async def get_routing_rules():
+    """Get current document routing rules"""
+    if not ingestion_service:
+        raise HTTPException(status_code=503, detail="Ingestion service not initialized")
+
+    rules = []
+    for rule in ingestion_service.router.rules:
+        rules.append({
+            "rule_id": rule.rule_id,
+            "name": rule.name,
+            "description": rule.description,
+            "strategy": rule.strategy.value,
+            "target_store_id": rule.target_store_id,
+            "priority": rule.priority,
+            "enabled": rule.enabled
+        })
+
+    return {"rules": rules}
 
 
 @app.on_event("shutdown")

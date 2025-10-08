@@ -102,6 +102,19 @@ services:
     tty: true
     command: ["/app/mcp_server/run_mcp_server.sh"]
 
+  unstructured-api:
+    image: downloads.unstructured.io/unstructured-io/unstructured-api:latest
+    ports:
+      - "8001:8000"
+    environment:
+      UNSTRUCTURED_API_KEY: ${UNSTRUCTURED_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   knowledge-system:
     build:
       context: .
@@ -111,6 +124,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       API_SERVICE_URL: http://api-service:8000
       INGESTION_SERVICE_URL: http://ingestion-service:5050
+      UNSTRUCTURED_API_URL: http://unstructured-api:8000
       WORKFLOW_CONFIG_PATH: /app/knowledge_system/examples/workflows.yaml
       ENABLE_AUDIT_LOGGING: "true"
       AUDIT_LEVEL: detailed
@@ -126,6 +140,8 @@ services:
         condition: service_started
       ingestion-service:
         condition: service_started
+      unstructured-api:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
       interval: 30s

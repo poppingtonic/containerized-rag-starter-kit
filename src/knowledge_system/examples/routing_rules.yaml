@@ -1,0 +1,330 @@
+# Document Routing Rules Configuration
+#
+# This file defines how documents are automatically routed to
+# appropriate knowledge stores during ingestion.
+
+# Default store for documents that don't match any rules
+default_store: general_documents
+
+# Routing rules (evaluated in priority order)
+routing_rules:
+  # Meeting transcripts and notes
+  - rule_id: meetings_rule
+    name: "Meeting Documents"
+    description: "Route meeting transcripts, notes, and recordings"
+    strategy: custom_function
+    custom_function: is_meeting_document
+    target_store_id: meetings
+    priority: 10
+    enabled: true
+
+  # Email messages
+  - rule_id: emails_rule
+    name: "Email Messages"
+    description: "Route email files to email archive"
+    strategy: custom_function
+    custom_function: is_email_document
+    target_store_id: emails
+    priority: 20
+    enabled: true
+
+  # Presentations
+  - rule_id: presentations_rule
+    name: "Presentations"
+    description: "Route PowerPoint, Keynote, and other presentations"
+    strategy: file_extension
+    file_extensions:
+      - ppt
+      - pptx
+      - key
+      - odp
+      - slide
+    target_store_id: presentations
+    priority: 30
+    enabled: true
+
+  # Spreadsheets and data files
+  - rule_id: spreadsheets_rule
+    name: "Spreadsheets and Data"
+    description: "Route spreadsheets and CSV files"
+    strategy: file_extension
+    file_extensions:
+      - xls
+      - xlsx
+      - csv
+      - ods
+      - numbers
+    target_store_id: data_files
+    priority: 40
+    enabled: true
+
+  # Source code
+  - rule_id: code_rule
+    name: "Source Code"
+    description: "Route source code files"
+    strategy: custom_function
+    custom_function: is_code_document
+    target_store_id: code_repository
+    priority: 50
+    enabled: true
+
+  # Confidential documents (by metadata)
+  - rule_id: confidential_metadata_rule
+    name: "Confidential by Metadata"
+    description: "Route documents marked as confidential"
+    strategy: metadata_field
+    metadata_field: classification
+    metadata_values:
+      - confidential
+      - secret
+      - restricted
+    target_store_id: confidential
+    priority: 5  # High priority - check first
+    enabled: true
+
+  # Legal documents (by content pattern)
+  - rule_id: legal_docs_rule
+    name: "Legal Documents"
+    description: "Route legal documents based on content"
+    strategy: content_pattern
+    content_patterns:
+      - "(?i)contract"
+      - "(?i)agreement"
+      - "(?i)terms and conditions"
+      - "(?i)non-disclosure"
+      - "(?i)legal notice"
+    target_store_id: legal
+    priority: 15
+    enabled: true
+
+  # Financial documents
+  - rule_id: financial_docs_rule
+    name: "Financial Documents"
+    description: "Route financial reports and statements"
+    strategy: content_pattern
+    content_patterns:
+      - "(?i)financial statement"
+      - "(?i)balance sheet"
+      - "(?i)income statement"
+      - "(?i)cash flow"
+      - "(?i)quarterly report"
+      - "(?i)annual report"
+    target_store_id: financial
+    priority: 25
+    enabled: true
+
+  # HR documents
+  - rule_id: hr_docs_rule
+    name: "HR Documents"
+    description: "Route HR and personnel documents"
+    strategy: metadata_field
+    metadata_field: department
+    metadata_values:
+      - hr
+      - human resources
+      - personnel
+    target_store_id: hr_documents
+    priority: 35
+    enabled: true
+
+  # Project documents (by metadata)
+  - rule_id: project_docs_rule
+    name: "Project Documents"
+    description: "Route documents tagged with project names"
+    strategy: metadata_field
+    metadata_field: project
+    metadata_values:
+      - project-alpha
+      - project-beta
+      - project-gamma
+    target_store_id: project_teams
+    priority: 45
+    enabled: true
+
+  # Research papers and publications
+  - rule_id: research_papers_rule
+    name: "Research Papers"
+    description: "Route academic papers and research"
+    strategy: content_pattern
+    content_patterns:
+      - "(?i)abstract:"
+      - "(?i)introduction:"
+      - "(?i)methodology:"
+      - "(?i)references:"
+      - "(?i)doi:"
+      - "(?i)arxiv:"
+    target_store_id: research
+    priority: 55
+    enabled: true
+
+  # Images and media
+  - rule_id: media_files_rule
+    name: "Media Files"
+    description: "Route images, videos, and audio files"
+    strategy: file_extension
+    file_extensions:
+      - jpg
+      - jpeg
+      - png
+      - gif
+      - svg
+      - mp4
+      - mov
+      - avi
+      - mp3
+      - wav
+    target_store_id: media
+    priority: 60
+    enabled: true
+
+  # Archived content (by date or metadata)
+  - rule_id: archived_rule
+    name: "Archived Documents"
+    description: "Route archived or historical documents"
+    strategy: metadata_field
+    metadata_field: status
+    metadata_values:
+      - archived
+      - historical
+      - deprecated
+    target_store_id: archive
+    priority: 70
+    enabled: true
+
+  # PDFs (catch-all for unmatched PDFs)
+  - rule_id: pdf_rule
+    name: "General PDFs"
+    description: "Route PDF documents not matched by other rules"
+    strategy: file_extension
+    file_extensions:
+      - pdf
+    target_store_id: pdf_documents
+    priority: 80
+    enabled: true
+
+  # Text documents (catch-all)
+  - rule_id: text_docs_rule
+    name: "Text Documents"
+    description: "Route text-based documents"
+    strategy: file_extension
+    file_extensions:
+      - doc
+      - docx
+      - txt
+      - rtf
+      - odt
+      - md
+      - markdown
+    target_store_id: text_documents
+    priority: 90
+    enabled: true
+
+# Store-specific configurations
+store_configs:
+  meetings:
+    description: "Meeting transcripts and notes"
+    pii_level: partial
+    audit_level: detailed
+    auto_create: true
+
+  emails:
+    description: "Email archive"
+    pii_level: full
+    audit_level: forensic
+    auto_create: true
+
+  presentations:
+    description: "Presentation files"
+    pii_level: none
+    audit_level: basic
+    auto_create: true
+
+  data_files:
+    description: "Spreadsheets and data files"
+    pii_level: partial
+    audit_level: detailed
+    auto_create: true
+
+  code_repository:
+    description: "Source code files"
+    pii_level: none
+    audit_level: basic
+    auto_create: true
+
+  confidential:
+    description: "Confidential documents"
+    pii_level: full
+    audit_level: forensic
+    requires_roles:
+      - executive
+      - legal
+    auto_create: true
+
+  legal:
+    description: "Legal documents"
+    pii_level: full
+    audit_level: forensic
+    requires_roles:
+      - legal
+      - executive
+    auto_create: true
+
+  financial:
+    description: "Financial documents"
+    pii_level: full
+    audit_level: forensic
+    requires_roles:
+      - finance
+      - executive
+    auto_create: true
+
+  hr_documents:
+    description: "HR and personnel documents"
+    pii_level: full
+    audit_level: forensic
+    requires_roles:
+      - hr
+      - manager
+    auto_create: true
+
+  project_teams:
+    description: "Project team documents"
+    pii_level: partial
+    audit_level: detailed
+    auto_create: true
+
+  research:
+    description: "Research papers and publications"
+    pii_level: none
+    audit_level: basic
+    auto_create: true
+
+  media:
+    description: "Images, videos, and audio files"
+    pii_level: none
+    audit_level: basic
+    auto_create: true
+
+  archive:
+    description: "Archived documents"
+    pii_level: partial
+    audit_level: basic
+    auto_create: true
+
+  pdf_documents:
+    description: "General PDF documents"
+    pii_level: partial
+    audit_level: detailed
+    auto_create: true
+
+  text_documents:
+    description: "General text documents"
+    pii_level: partial
+    audit_level: detailed
+    auto_create: true
+
+  general_documents:
+    description: "General document store (default)"
+    pii_level: partial
+    audit_level: detailed
+    auto_create: true
