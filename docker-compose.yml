@@ -102,6 +102,37 @@ services:
     tty: true
     command: ["/app/mcp_server/run_mcp_server.sh"]
 
+  knowledge-system:
+    build:
+      context: .
+      dockerfile: ./knowledge_system_service/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://graphraguser:graphragpassword@db:5432/graphragdb
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      API_SERVICE_URL: http://api-service:8000
+      INGESTION_SERVICE_URL: http://ingestion-service:5050
+      WORKFLOW_CONFIG_PATH: /app/knowledge_system/examples/workflows.yaml
+      ENABLE_AUDIT_LOGGING: "true"
+      AUDIT_LEVEL: detailed
+    ports:
+      - "8100:8100"
+    volumes:
+      - ./src/knowledge_system:/app/knowledge_system
+      - knowledge_system_logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      api-service:
+        condition: service_started
+      ingestion-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
   pg_data:
   graphrag_outputs:
@@ -109,3 +140,4 @@ volumes:
   ocr_output:
   mg_data:
   grobid_data:
+  knowledge_system_logs:
