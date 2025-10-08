@@ -20,6 +20,13 @@ sys.path.insert(0, '/app')
 
 from knowledge_system.stores.manager import KnowledgeStoreManager
 from knowledge_system.stores.base import StoreMetadata, StoreType
+from knowledge_system.stores.api_management import (
+    StoreManagementAPI,
+    CreateStoreRequest,
+    StoreResponse,
+    IndexDocumentRequest,
+    StoreHealthResponse
+)
 from knowledge_system.rbac.service import RBACService
 from knowledge_system.rbac.models import Role, User
 from knowledge_system.audit.logger import AuditLogger
@@ -53,6 +60,7 @@ store_manager: Optional[KnowledgeStoreManager] = None
 rbac_service: Optional[RBACService] = None
 audit_logger: Optional[AuditLogger] = None
 workflow_router: Optional[WorkflowRouter] = None
+store_management_api: Optional[StoreManagementAPI] = None
 
 
 # Request/Response Models
@@ -96,7 +104,7 @@ class HealthResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    global store_manager, rbac_service, audit_logger, workflow_router
+    global store_manager, rbac_service, audit_logger, workflow_router, store_management_api
 
     logger.info("Starting Knowledge System Service...")
 
@@ -123,6 +131,14 @@ async def startup_event():
             rbac_service=rbac_service,
             audit_logger=audit_logger,
             obfuscator=obfuscator
+        )
+
+        # Initialize store management API
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        store_management_api = StoreManagementAPI(
+            store_manager=store_manager,
+            db_connection_string=db_url,
+            openai_api_key=openai_api_key
         )
 
         # Load workflows
@@ -192,6 +208,7 @@ async def health_check():
         "rbac_service": rbac_service is not None,
         "audit_logger": audit_logger is not None and audit_logger._initialized,
         "workflow_router": workflow_router is not None,
+        "store_management_api": store_management_api is not None,
     }
 
     all_healthy = all(components.values())
@@ -346,6 +363,143 @@ async def get_audit_statistics(
         }
     except Exception as e:
         logger.error(f"Error getting audit statistics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Store Management Endpoints
+
+@app.post("/stores", response_model=StoreResponse)
+async def create_knowledge_store(request: CreateStoreRequest):
+    """
+    Create a new knowledge store.
+
+    The store will share the existing PostgreSQL database but partition data by store_id.
+    This allows multiple stores to reuse vector search infrastructure while maintaining
+    logical separation.
+    """
+    if not store_management_api:
+        raise HTTPException(status_code=503, detail="Store management API not initialized")
+
+    try:
+        response = await store_management_api.create_store(request)
+        logger.info(f"Created knowledge store: {request.store_id}")
+        return response
+    except Exception as e:
+        logger.error(f"Error creating store: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stores/all", response_model=List[StoreResponse])
+async def list_all_stores():
+    """List all registered knowledge stores with statistics"""
+    if not store_management_api:
+        raise HTTPException(status_code=503, detail="Store management API not initialized")
+
+    try:
+        stores = await store_management_api.list_stores()
+        return stores
+    except Exception as e:
+        logger.error(f"Error listing stores: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stores/{store_id}", response_model=StoreResponse)
+async def get_store_details(store_id: str):
+    """Get detailed information about a specific store"""
+    if not store_management_api:
+        raise HTTPException(status_code=503, detail="Store management API not initialized")
+
+    try:
+        store = await store_management_api.get_store(store_id)
+        if not store:
+            raise HTTPException(status_code=404, detail=f"Store {store_id} not found")
+        return store
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting store details: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/stores/{store_id}")
+async def delete_knowledge_store(store_id: str):
+    """
+    Remove a knowledge store from the manager.
+
+    Note: This does NOT delete the data from the database.
+    Data remains partitioned by store_id and can be re-registered.
+    """
+    if not store_management_api:
+        raise HTTPException(status_code=503, detail="Store management API not initialized")
+
+    try:
+        success = await store_management_api.delete_store(store_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Store {store_id} not found")
+
+        return {
+            "success": True,
+            "store_id": store_id,
+            "message": "Store unregistered successfully. Data remains in database."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting store: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stores/{store_id}/health", response_model=StoreHealthResponse)
+async def check_store_health(store_id: str):
+    """Check health status of a knowledge store"""
+    if not store_management_api:
+        raise HTTPException(status_code=503, detail="Store management API not initialized")
+
+    try:
+        health = await store_management_api.check_store_health(store_id)
+        return health
+    except Exception as e:
+        logger.error(f"Error checking store health: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/stores/{store_id}/documents")
+async def index_document_to_store(store_id: str, request: IndexDocumentRequest):
+    """
+    Index a document into a specific knowledge store.
+
+    The document will be:
+    1. Chunked into smaller pieces
+    2. Embedded using OpenAI
+    3. Stored in the shared database with store_id partition
+    4. Indexed for vector similarity search
+    """
+    if not store_management_api:
+        raise HTTPException(status_code=503, detail="Store management API not initialized")
+
+    try:
+        result = await store_management_api.index_document(store_id, request)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error indexing document: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stores/{store_id}/statistics")
+async def get_store_statistics(store_id: str):
+    """Get detailed statistics for a knowledge store"""
+    if not store_management_api:
+        raise HTTPException(status_code=503, detail="Store management API not initialized")
+
+    try:
+        stats = await store_management_api.get_store_statistics(store_id)
+        return stats
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting store statistics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
