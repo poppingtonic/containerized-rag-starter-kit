@@ -444,7 +444,7 @@ If you use this system, please cite:
 @software{consilience_gepa_rag,
   title = {GEPA-Optimized RAG System for Consilience},
   author = {Consilience Team},
-  year = {2024},
+  year = {2025},
   note = {Based on DSPy and GEPA optimizer}
 }
 ```
