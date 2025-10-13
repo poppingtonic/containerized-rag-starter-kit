@@ -28,6 +28,15 @@ class Query(BaseModel):
     use_smart_selection: bool = True
     use_haiku_verification: bool = False
 
+class RetrieveQuery(BaseModel):
+    query: str
+    max_results: int = 5
+
+class RetrieveResponse(BaseModel):
+    query: str
+    chunks: List[ChunkResponse]
+    processing_time: Optional[float] = None
+
 class SubQuestionResponse(BaseModel):
     question: str
     answer: str
@@ -148,6 +157,41 @@ async def process_query(query_data: Query):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
+
+@router.post("/query/retrieve-chunks", response_model=RetrieveResponse)
+async def retrieve_chunks(query_data: RetrieveQuery):
+    """
+    Retrieval-only endpoint: performs vector search and returns the top chunks.
+    No classification, no generation, no memory writes, and no graph enrichment.
+    """
+    start_time = time.time()
+    try:
+        # Create query embedding
+        query_embedding = query_service.create_embedding(query_data.query)
+
+        # Perform vector search to get top chunks
+        chunks = query_service.vector_search(query_embedding, query_data.max_results)
+
+        # Format response chunks
+        formatted_chunks = [
+            {
+                "id": chunk["id"],
+                "text": chunk["text_content"],
+                "source": (json.loads(chunk["source_metadata"]) if isinstance(chunk["source_metadata"], str)
+                           else chunk["source_metadata"]).get("source", "Unknown source"),
+                "similarity": float(chunk["similarity"]),
+            }
+            for chunk in chunks
+        ]
+
+        return {
+            "query": query_data.query,
+            "chunks": formatted_chunks,
+            "processing_time": time.time() - start_time,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chunk retrieval failed: {str(e)}")
 
 @router.post("/query/classify-chunks")
 async def classify_chunks(query: str, chunk_ids: List[int]):

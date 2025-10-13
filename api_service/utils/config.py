@@ -1,4 +1,5 @@
 import os
+from __future__ import annotations
 
 class Config:
     DB_URL = os.environ.get("DATABASE_URL")
@@ -18,3 +19,10 @@ class Config:
     VERIFICATION_THRESHOLD = float(os.environ.get("VERIFICATION_THRESHOLD", "0.7"))
     MAX_SUBQUESTIONS = int(os.environ.get("MAX_SUBQUESTIONS", "4"))
     AMPLIFICATION_MIN_CONTEXT_LENGTH = int(os.environ.get("AMPLIFICATION_MIN_CONTEXT_LENGTH", "500"))
+
+    # Uploads / Storage
+    UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/data/uploads")
+    AZURE_STORAGE_ENABLED = os.environ.get("AZURE_STORAGE_ENABLED", "false").lower() == "true"
+    AZURE_STORAGE_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", "")
+    AZURE_STORAGE_CONTAINER = os.environ.get("AZURE_STORAGE_CONTAINER", "documents")
+    AZURE_STORAGE_PREFIX = os.environ.get("AZURE_STORAGE_PREFIX", "uploads/")

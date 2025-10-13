@@ -13,3 +13,4 @@ jsonlines==4.0.0
 langchain-openai==0.3.23
 langchain-core==0.3.65
 datasets==3.6.0
+azure-storage-blob==12.23.1
